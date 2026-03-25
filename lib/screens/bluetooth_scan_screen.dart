@@ -5,6 +5,8 @@ import '../l10n/app_localizations.dart';
 import '../services/bms_ble_service.dart';
 import '../models/bms_data.dart';
 
+enum _BtStatus { init, turnOn, ready, scanning, noDevice, selectDevice, connecting, connected, disconnected, scanError, connectError, unavailable }
+
 class BluetoothScanScreen extends StatefulWidget {
   final BmsBleService bleService;
   final AppLocalizations loc;
@@ -25,48 +27,89 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   List<ScanResult> _scanResults = [];
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BmsData>? _dataSub;
-  String _status = '';
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSub;
+  _BtStatus _btStatus = _BtStatus.init;
+  String _statusArg = '';
   bool _isScanning = false;
-  bool _isConnecting = false;
+  String? _connectingDeviceId;
 
   BmsBleService get _bleService => widget.bleService;
   AppLocalizations get loc => widget.loc;
 
+  String get _statusText {
+    switch (_btStatus) {
+      case _BtStatus.init:
+        return loc.btStatusInit;
+      case _BtStatus.turnOn:
+        return loc.btTurnOn;
+      case _BtStatus.ready:
+        return loc.btReady;
+      case _BtStatus.scanning:
+        return loc.btScanning;
+      case _BtStatus.noDevice:
+        return loc.btNoDevice;
+      case _BtStatus.selectDevice:
+        return loc.btSelectDevice;
+      case _BtStatus.connecting:
+        return loc.btConnectingTo(_statusArg);
+      case _BtStatus.connected:
+        return loc.btConnected;
+      case _BtStatus.disconnected:
+        return loc.btDisconnected;
+      case _BtStatus.scanError:
+        return loc.btScanError(_statusArg);
+      case _BtStatus.connectError:
+        return loc.btConnectError(_statusArg);
+      case _BtStatus.unavailable:
+        return loc.btUnavailable(_statusArg);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _status = loc.btStatusInit;
     _checkBluetooth();
   }
 
   Future<void> _checkBluetooth() async {
     try {
-      if (await FlutterBluePlus.isOn == false) {
-        setState(() => _status = loc.btTurnOn);
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        setState(() => _btStatus = _BtStatus.turnOn);
         return;
       }
-      setState(() => _status = loc.btReady);
+      setState(() => _btStatus = _BtStatus.ready);
     } catch (e) {
-      setState(() => _status = loc.btUnavailable('$e'));
+      setState(() {
+        _btStatus = _BtStatus.unavailable;
+        _statusArg = '$e';
+      });
     }
   }
 
   void _startScan() async {
     if (_isScanning) return;
     try {
-      if (await FlutterBluePlus.isOn == false) {
-        setState(() => _status = loc.btTurnOn);
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        setState(() => _btStatus = _BtStatus.turnOn);
         return;
       }
       setState(() {
         _isScanning = true;
         _scanResults = [];
-        _status = loc.btScanning;
+        _btStatus = _BtStatus.scanning;
       });
       await _bleService.startScan(timeout: const Duration(seconds: 12));
       _scanSub?.cancel();
       _scanSub = _bleService.scanResults.listen((results) {
-        if (mounted) setState(() => _scanResults = results);
+        if (mounted) {
+          setState(() {
+            _scanResults = results
+                .where((r) => r.device.platformName.isNotEmpty)
+                .toList();
+          });
+        }
       });
       await Future.delayed(const Duration(seconds: 12));
       if (mounted) {
@@ -74,7 +117,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         _bleService.stopScan();
         setState(() {
           _isScanning = false;
-          _status = _scanResults.isEmpty ? loc.btNoDevice : loc.btSelectDevice;
+          _btStatus = _scanResults.isEmpty ? _BtStatus.noDevice : _BtStatus.selectDevice;
         });
       }
     } catch (e) {
@@ -82,18 +125,20 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         _bleService.stopScan();
         setState(() {
           _isScanning = false;
-          _status = loc.btScanError('$e');
+          _btStatus = _BtStatus.scanError;
+          _statusArg = '$e';
         });
       }
     }
   }
 
   void _connect(BluetoothDevice device) async {
-    if (_isConnecting || _bleService.isConnected) return;
+    if (_connectingDeviceId != null || _bleService.isConnected) return;
     final name = device.platformName.isNotEmpty ? device.platformName : device.remoteId.toString();
     setState(() {
-      _isConnecting = true;
-      _status = loc.btConnectingTo(name);
+      _connectingDeviceId = device.remoteId.str;
+      _btStatus = _BtStatus.connecting;
+      _statusArg = name;
     });
     _scanSub?.cancel();
     _bleService.stopScan();
@@ -103,28 +148,41 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
       _dataSub = _bleService.bmsDataStream.listen((data) {
         widget.onDataUpdate(data);
       });
+      _connectionStateSub?.cancel();
+      _connectionStateSub = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected && mounted) {
+          _dataSub?.cancel();
+          _connectionStateSub?.cancel();
+          setState(() {
+            _btStatus = _BtStatus.disconnected;
+          });
+        }
+      });
       if (mounted) {
         setState(() {
-          _isConnecting = false;
-          _status = loc.btConnected;
+          _connectingDeviceId = null;
+          _isScanning = false;
+          _btStatus = _BtStatus.connected;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _isConnecting = false;
-          _status = loc.btConnectError('$e');
+          _connectingDeviceId = null;
+          _btStatus = _BtStatus.connectError;
+          _statusArg = '$e';
         });
       }
     }
   }
 
   void _disconnect() async {
+    _connectionStateSub?.cancel();
     await _bleService.disconnect();
     _dataSub?.cancel();
     if (mounted) {
       setState(() {
-        _status = loc.btDisconnected;
+        _btStatus = _BtStatus.disconnected;
       });
     }
   }
@@ -133,6 +191,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   void dispose() {
     _scanSub?.cancel();
     _dataSub?.cancel();
+    _connectionStateSub?.cancel();
     super.dispose();
   }
 
@@ -154,10 +213,12 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.redAccent,
               side: const BorderSide(color: Colors.redAccent),
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
         ],
-        if (_scanResults.isNotEmpty) ...[
+        if (_scanResults.isNotEmpty && !_bleService.isConnected) ...[
           const SizedBox(height: 20),
           Text(
             loc.btDeviceList,
@@ -175,20 +236,23 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   }
 
   Widget _buildStatusCard(ThemeData theme) {
+    final isConnected = _bleService.isConnected;
+    final statusColor = isConnected ? Colors.green : theme.colorScheme.primary;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            theme.colorScheme.primary.withValues(alpha: 0.08),
-            theme.colorScheme.primary.withValues(alpha: 0.02),
+            statusColor.withValues(alpha: 0.08),
+            statusColor.withValues(alpha: 0.02),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.15),
+          color: statusColor.withValues(alpha: 0.15),
         ),
       ),
       child: Row(
@@ -196,12 +260,12 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              color: statusColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              _bleService.isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
-              color: theme.colorScheme.primary,
+              isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
+              color: statusColor,
               size: 28,
             ),
           ),
@@ -211,7 +275,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _status,
+                  _statusText,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -235,8 +299,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   }
 
   Widget _buildScanButton(ThemeData theme) {
+    if (_bleService.isConnected) return const SizedBox.shrink();
     return FilledButton.icon(
-      onPressed: (_isScanning || _isConnecting) ? null : _startScan,
+      onPressed: (_isScanning || _connectingDeviceId != null) ? null : _startScan,
       icon: _isScanning
           ? const SizedBox(
               width: 20,
@@ -294,7 +359,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
             )),
           ],
         ),
-        trailing: _isConnecting
+        trailing: _connectingDeviceId == device.remoteId.str
             ? const SizedBox(
                 width: 24,
                 height: 24,
@@ -302,7 +367,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
               )
             : IconButton(
                 icon: Icon(Icons.link, color: theme.colorScheme.primary),
-                onPressed: () => _connect(device),
+                onPressed: _connectingDeviceId != null ? null : () => _connect(device),
                 tooltip: loc.btConnect,
               ),
       ),
