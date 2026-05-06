@@ -19,6 +19,7 @@ class AppLocalizations extends ChangeNotifier {
   String get navBatteryInfo => _t('电池信息', 'Battery');
   String get navBatteryDetail => _t('详细信息', 'Details');
   String get navAbout => _t('关于', 'About');
+  String get navMaintenance => _t('维护', 'Maintenance');
 
   // Bluetooth scan
   String get btStatusInit => _t('请开启蓝牙并点击扫描', 'Turn on Bluetooth and tap scan');
@@ -160,6 +161,29 @@ class AppLocalizations extends ChangeNotifier {
   String get english => _t('英文', 'English');
   String get logoPlaceholder => _t('Logo 展示区域', 'Logo Display Area');
   String get version => _t('版本', 'Version');
+
+  // Maintenance / SOH / History / OTA
+  String get maintenanceTitle => _t('维护', 'Maintenance');
+  String get maintenanceNeedConnect =>
+      _t('请先连接 BMS 设备', 'Connect to a BMS device first');
+  String get sohLabel => _t('健康度 SOH', 'SOH');
+  String get sohRefresh => _t('读取 SOH', 'Read SOH');
+  String get sohUnknown => _t('—', '—');
+  String get historyTitle => _t('历史记录', 'History');
+  String get historyLoadMore => _t('加载更多', 'Load more');
+  String get historyEmpty => _t('暂无记录', 'No records');
+  String get historyTime => _t('时间', 'Time');
+  String get historyVoltage => _t('总电压', 'Voltage');
+  String get historyCurrent => _t('电流', 'Current');
+  String get historySoc => _t('SOC', 'SOC');
+  String get historyFailed => _t('读取失败', 'Read failed');
+  String get otaTitle => _t('OTA 升级', 'OTA Update');
+  String get otaPickFile => _t('选择固件文件', 'Select firmware');
+  String get otaStart => _t('开始升级', 'Start update');
+  String get otaInProgress => _t('升级中…', 'Updating…');
+  String get otaSuccess => _t('升级流程已完成', 'Update sequence completed');
+  String get otaSelectFileFirst => _t('请先选择固件', 'Select a firmware file first');
+  String otaErrorMsg(String e) => _t('错误: $e', 'Error: $e');
 
   String _t(String zh, String en) => _language == AppLanguage.zh ? zh : en;
 }

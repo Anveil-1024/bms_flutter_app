@@ -1,13 +1,28 @@
 import 'dart:async';
+import 'dart:math' show max, min;
 import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../models/bms_data.dart';
+import '../models/history_record.dart';
 
+/// BMS BLE 协议（扩展功能码约定见文件末尾注释）
 class BmsProtocol {
   static const int frameHeader = 0x55;
   static const int frameTailHigh = 0xAA;
   static const int frameTailLow = 0xBB;
+
   static const int cmdQueryBatteryInfo = 0x1001;
+  /// SOH 查询（主机数据块为空；从机数据块首字节为 SOH 0~100）
+  static const int cmdQuerySoh = 0x1003;
+  /// 历史记录（主机：startIndex 2B LE + count 2B LE；从机：若干条 16B 定长记录）
+  static const int cmdReadHistory = 0x1004;
+  static const int cmdOtaBegin = 0x1005;
+  static const int cmdOtaData = 0x1006;
+  static const int cmdOtaEnd = 0x1007;
+
+  static const int otaStatusOk = 0x00;
+  /// 数据包需重发（约定占位）
+  static const int otaDataRetry = 0x01;
 
   /// 构建协议帧: 0x55 + 功能码(2B) + 数据长度(2B) + 数据块(NB) + XOR(2B) + 0xAABB
   static Uint8List buildFrame(int functionCode, [List<int>? data]) {
@@ -29,12 +44,68 @@ class BmsProtocol {
     return Uint8List.fromList(frame);
   }
 
-  /// 构建查询电池信息命令帧 (0x1001, 无数据块)
-  static Uint8List buildQueryBatteryInfo() {
-    return buildFrame(cmdQueryBatteryInfo);
+  static Uint8List buildQueryBatteryInfo() => buildFrame(cmdQueryBatteryInfo);
+
+  static Uint8List buildQuerySoh() => buildFrame(cmdQuerySoh);
+
+  /// startIndex、count 均为小端；单次 count 建议 ≤32
+  static Uint8List buildReadHistory(int startIndex, int count) {
+    final c = count.clamp(1, 32);
+    final payload = <int>[
+      startIndex & 0xFF,
+      (startIndex >> 8) & 0xFF,
+      c & 0xFF,
+      (c >> 8) & 0xFF,
+    ];
+    return buildFrame(cmdReadHistory, payload);
   }
 
-  /// XOR校验: 对所有字节逐字节异或，结果扩展为2字节 (高8位=0, 低8位=xor结果)
+  static Uint8List buildOtaBegin(int imageSize, int crc32) {
+    final payload = <int>[
+      ..._uint32Le(imageSize),
+      ..._uint32Le(crc32),
+    ];
+    return buildFrame(cmdOtaBegin, payload);
+  }
+
+  static Uint8List buildOtaData(int offset, Uint8List chunk) {
+    final len = chunk.length;
+    final payload = <int>[
+      ..._uint32Le(offset),
+      len & 0xFF,
+      (len >> 8) & 0xFF,
+      ...chunk,
+    ];
+    return buildFrame(cmdOtaData, payload);
+  }
+
+  static Uint8List buildOtaEnd({bool confirm = true}) {
+    return buildFrame(cmdOtaEnd, confirm ? [0x01] : []);
+  }
+
+  static List<int> _uint32Le(int v) => [
+        v & 0xFF,
+        (v >> 8) & 0xFF,
+        (v >> 16) & 0xFF,
+        (v >> 24) & 0xFF,
+      ];
+
+  /// 标准 CRC32（IEEE 802.3），用于 OTA 镜像校验
+  static int crc32(Uint8List bytes) {
+    int crc = 0xFFFFFFFF;
+    for (final b in bytes) {
+      crc = (crc ^ (b & 0xFF)) & 0xFFFFFFFF;
+      for (var i = 0; i < 8; i++) {
+        if ((crc & 1) != 0) {
+          crc = ((crc >>> 1) ^ 0xEDB88320) & 0xFFFFFFFF;
+        } else {
+          crc = (crc >>> 1) & 0xFFFFFFFF;
+        }
+      }
+    }
+    return (~crc) & 0xFFFFFFFF;
+  }
+
   static int _calcXor(List<int> bytes) {
     int xor = 0;
     for (final b in bytes) {
@@ -43,7 +114,6 @@ class BmsProtocol {
     return xor & 0xFFFF;
   }
 
-  /// 校验完整帧是否合法
   static bool validateFrame(List<int> frame) {
     if (frame.length < 7) return false;
     if (frame.first != frameHeader) return false;
@@ -62,11 +132,23 @@ class BmsProtocol {
     return receivedXor == calcXor;
   }
 
-  /// 解析0x1001回复的数据块为 BmsData
+  /// 返回完整帧中的数据块（不含帧头功能码长度及校验尾）
+  static List<int>? extractPayload(List<int> frame) {
+    if (!validateFrame(frame)) return null;
+    final dataLen = (frame[3] << 8) | frame[4];
+    if (frame.length < 5 + dataLen + 4) return null;
+    return frame.sublist(5, 5 + dataLen);
+  }
+
+  static int funcCodeOf(List<int> frame) {
+    if (frame.length < 3) return 0;
+    return (frame[1] << 8) | frame[2];
+  }
+
   static BmsData? parseBatteryInfo(List<int> frame) {
     if (!validateFrame(frame)) return null;
 
-    final funcCode = (frame[1] << 8) | frame[2];
+    final funcCode = funcCodeOf(frame);
     if (funcCode != cmdQueryBatteryInfo) return null;
 
     final dataLen = (frame[3] << 8) | frame[4];
@@ -77,110 +159,84 @@ class BmsProtocol {
 
     int pos = 0;
 
-    // 1. 设备序列号 16 Byte ASCII
     final serialBytes = d.sublist(pos, pos + 16);
     final serial = String.fromCharCodes(
       serialBytes.where((b) => b != 0x00),
     );
     pos += 16;
 
-    // 2. 总电压 2B 小端 0.1V
     final rawVoltage = _readUint16LE(d, pos);
     pos += 2;
 
-    // 3. 电流 2B 小端 有符号 0.1A
     final rawCurrent = _readInt16LE(d, pos);
     pos += 2;
 
-    // 4. SOC 1B
     final soc = d[pos] & 0xFF;
     pos += 1;
 
-    // 5. 电池工作状态 1B
     final workState = d[pos] & 0xFF;
     pos += 1;
 
-    // 6. 最高单体电压 2B 小端 mV
     final maxCellV = _readUint16LE(d, pos);
     pos += 2;
 
-    // 7. 最低单体电压 2B 小端 mV
     final minCellV = _readUint16LE(d, pos);
     pos += 2;
 
-    // 8. 最高温度 1B offset+40
     final maxTemp = d[pos] & 0xFF;
     pos += 1;
 
-    // 9. 最低温度 1B offset+40
     final minTemp = d[pos] & 0xFF;
     pos += 1;
 
-    // 10. MOS温度 1B offset+40
     final mosTemp = d[pos] & 0xFF;
     pos += 1;
 
-    // 11. 剩余容量 2B 小端 mAh
     final remainCap = _readUint16LE(d, pos);
     pos += 2;
 
-    // 12. 额定容量 2B 小端 0.1Ah
     final ratedCap = _readUint16LE(d, pos);
     pos += 2;
 
-    // 13. 循环次数 2B 小端
     final cycleCount = _readUint16LE(d, pos);
     pos += 2;
 
-    // 14. 电芯串数 1B
     final cellCount = d[pos] & 0xFF;
     pos += 1;
 
-    // 15. 开关信号状态 1B
     final switchStatus = d[pos] & 0xFF;
     pos += 1;
 
-    // 16. 故障标志位 4B 小端
     final faultFlags = _readUint32LE(d, pos);
     pos += 4;
 
-    // 17. 一级放电过流保护值 2B 小端 0.1A
     final dischargeOcp = _readUint16LE(d, pos);
     pos += 2;
 
-    // 18. 充电过流保护值 2B 小端 0.1A
     final chargeOcp = _readUint16LE(d, pos);
     pos += 2;
 
-    // 19. 单体过压保护电压 2B 小端 mV
     final cellOvp = _readUint16LE(d, pos);
     pos += 2;
 
-    // 20. 单体过放保护电压 2B 小端 mV
     final cellUvp = _readUint16LE(d, pos);
     pos += 2;
 
-    // 21. 充电高温保护值 1B 1°C offset+40
     final chargeOtp = d[pos] & 0xFF;
     pos += 1;
 
-    // 22. 放电高温保护值 1B 1°C offset+40
     final dischargeOtp = d[pos] & 0xFF;
     pos += 1;
 
-    // 23. 最大允许充电电流 2B 小端 1A
     final maxChargeCur = _readUint16LE(d, pos);
     pos += 2;
 
-    // 24. 最大允许放电电流 2B 小端 1A
     final maxDischargeCur = _readUint16LE(d, pos);
     pos += 2;
 
-    // 25. 硬件版本 1B
     final hwVer = d[pos] & 0xFF;
     pos += 1;
 
-    // 26. 软件版本 1B
     final swVer = d[pos] & 0xFF;
 
     return BmsData(
@@ -213,6 +269,14 @@ class BmsProtocol {
     );
   }
 
+  static List<HistoryRecord> parseHistoryPayload(List<int> data) {
+    final list = <HistoryRecord>[];
+    for (var off = 0; off + HistoryRecord.recordSize <= data.length; off += HistoryRecord.recordSize) {
+      list.add(HistoryRecord.fromBytes(data, off));
+    }
+    return list;
+  }
+
   static int _readUint16LE(List<int> data, int offset) {
     return (data[offset] & 0xFF) | ((data[offset + 1] & 0xFF) << 8);
   }
@@ -235,6 +299,9 @@ class BmsBleService {
   static const String notifyCharUuid = '0000fff1-0000-1000-8000-00805f9b34fb';
   static const String writeCharUuid = '0000fff2-0000-1000-8000-00805f9b34fb';
 
+  /// 默认 OTA 分包大小（字节）；升级前可尝试 requestMtu 后略增大
+  static const int defaultOtaChunkSize = 128;
+
   StreamSubscription<List<int>>? _notifySub;
   Timer? _queryTimer;
   final _bmsDataController = StreamController<BmsData>.broadcast();
@@ -245,6 +312,11 @@ class BmsBleService {
   BluetoothCharacteristic? _writeChar;
 
   final List<int> _rxBuffer = [];
+
+  Completer<List<int>>? _pendingCompleter;
+  int? _pendingFuncCode;
+
+  int _periodicPauseRef = 0;
 
   BluetoothDevice? get device => _device;
   bool get isConnected => _device?.isConnected ?? false;
@@ -293,7 +365,7 @@ class BmsBleService {
 
     await Future.delayed(const Duration(milliseconds: 300));
     await sendQueryBatteryInfo();
-    _startPeriodicQuery();
+    _startPeriodicQueryIfIdle();
   }
 
   void _onNotifyData(List<int> value) {
@@ -302,7 +374,6 @@ class BmsBleService {
     _tryParseFrames();
   }
 
-  /// 从缓冲区中尝试提取完整帧并解析
   void _tryParseFrames() {
     while (_rxBuffer.length >= 7) {
       final headerIdx = _rxBuffer.indexOf(BmsProtocol.frameHeader);
@@ -317,7 +388,7 @@ class BmsBleService {
       if (_rxBuffer.length < 5) return;
 
       final dataLen = (_rxBuffer[3] << 8) | _rxBuffer[4];
-      final totalLen = 5 + dataLen + 4; // header(1)+func(2)+len(2) + data(N) + xor(2)+tail(2)
+      final totalLen = 5 + dataLen + 4;
 
       if (_rxBuffer.length < totalLen) return;
 
@@ -329,33 +400,212 @@ class BmsBleService {
         continue;
       }
 
-      final funcCode = (frame[1] << 8) | frame[2];
+      final funcCode = BmsProtocol.funcCodeOf(frame);
+
       if (funcCode == BmsProtocol.cmdQueryBatteryInfo) {
         final data = BmsProtocol.parseBatteryInfo(frame);
         if (data != null) {
           _bmsDataController.add(data);
         }
+        continue;
+      }
+
+      if (_pendingCompleter != null &&
+          !_pendingCompleter!.isCompleted &&
+          funcCode == _pendingFuncCode) {
+        final payload = BmsProtocol.extractPayload(frame);
+        if (payload != null) {
+          _pendingCompleter!.complete(payload);
+          _pendingCompleter = null;
+          _pendingFuncCode = null;
+        }
       }
     }
   }
 
-  /// 发送查询电池信息命令
   Future<void> sendQueryBatteryInfo() async {
     if (_writeChar == null || !isConnected) return;
     final frame = BmsProtocol.buildQueryBatteryInfo();
     await _writeChar!.write(frame.toList(), withoutResponse: false);
   }
 
-  void _startPeriodicQuery() {
+  /// 读取 SOH（0~100）；失败或空应答返回 null
+  Future<int?> readSoh({Duration timeout = const Duration(seconds: 5)}) async {
+    final payload = await _sendCommandAndWait(
+      BmsProtocol.cmdQuerySoh,
+      BmsProtocol.buildQuerySoh(),
+      timeout: timeout,
+    );
+    if (payload.isEmpty) return null;
+    return (payload[0] & 0xFF).clamp(0, 100);
+  }
+
+  /// 分页读取历史记录；[count] 将被限制在 1~32
+  Future<List<HistoryRecord>> readHistoryPage(
+    int startIndex,
+    int count, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    final payload = await _sendCommandAndWait(
+      BmsProtocol.cmdReadHistory,
+      BmsProtocol.buildReadHistory(startIndex, count),
+      timeout: timeout,
+    );
+    return BmsProtocol.parseHistoryPayload(payload);
+  }
+
+  /// OTA：发送完整镜像；升级期间暂停周期查询，结束后恢复
+  Future<void> runOta(
+    Uint8List image, {
+    void Function(double progress)? onProgress,
+    int chunkSize = defaultOtaChunkSize,
+    Duration stepTimeout = const Duration(seconds: 30),
+  }) async {
+    if (_writeChar == null || !isConnected) {
+      throw StateError('Not connected');
+    }
+    if (image.isEmpty) {
+      throw OtaException('Empty firmware image');
+    }
+
+    try {
+      await _device?.requestMtu(247);
+    } catch (_) {
+      /* 部分平台可能不支持，使用默认分包大小 */
+    }
+
+    final crc = BmsProtocol.crc32(image);
+    final effectiveChunk = max(8, chunkSize);
+
+    _pausePeriodicQuery();
+    try {
+      final beginResp = await _sendCommandAndWait(
+        BmsProtocol.cmdOtaBegin,
+        BmsProtocol.buildOtaBegin(image.length, crc),
+        timeout: stepTimeout,
+        managePeriodic: false,
+      );
+      if (beginResp.isEmpty || beginResp[0] != BmsProtocol.otaStatusOk) {
+        throw OtaException(
+          'OTA begin rejected',
+          beginResp.isNotEmpty ? beginResp[0] & 0xFF : null,
+        );
+      }
+
+      var offset = 0;
+      while (offset < image.length) {
+        final len = min(effectiveChunk, image.length - offset);
+        Uint8List chunk = image.sublist(offset, offset + len);
+
+        while (true) {
+          final dataResp = await _sendCommandAndWait(
+            BmsProtocol.cmdOtaData,
+            BmsProtocol.buildOtaData(offset, chunk),
+            timeout: stepTimeout,
+            managePeriodic: false,
+          );
+          if (dataResp.isEmpty) {
+            throw OtaException('OTA data: empty response');
+          }
+          final st = dataResp[0] & 0xFF;
+          if (st == BmsProtocol.otaStatusOk) {
+            offset += len;
+            onProgress?.call(offset / image.length);
+            break;
+          }
+          if (st == BmsProtocol.otaDataRetry) {
+            continue;
+          }
+          throw OtaException('OTA data failed', st);
+        }
+      }
+
+      final endResp = await _sendCommandAndWait(
+        BmsProtocol.cmdOtaEnd,
+        BmsProtocol.buildOtaEnd(),
+        timeout: stepTimeout,
+        managePeriodic: false,
+      );
+      if (endResp.isEmpty || endResp[0] != BmsProtocol.otaStatusOk) {
+        throw OtaException(
+          'OTA end failed',
+          endResp.isNotEmpty ? endResp[0] & 0xFF : null,
+        );
+      }
+      onProgress?.call(1.0);
+    } finally {
+      _resumePeriodicQuery();
+    }
+  }
+
+  Future<List<int>> _sendCommandAndWait(
+    int expectedFuncCode,
+    Uint8List frame, {
+    Duration timeout = const Duration(seconds: 5),
+    bool managePeriodic = true,
+  }) async {
+    if (_writeChar == null || !isConnected) {
+      throw StateError('Not connected');
+    }
+    if (_pendingCompleter != null) {
+      throw StateError('Another command is in progress');
+    }
+
+    if (managePeriodic) _pausePeriodicQuery();
+    final completer = Completer<List<int>>();
+    _pendingCompleter = completer;
+    _pendingFuncCode = expectedFuncCode;
+
+    try {
+      await _writeChar!.write(frame.toList(), withoutResponse: false);
+      return await completer.future.timeout(timeout);
+    } on TimeoutException catch (e) {
+      _failPendingCommand(e);
+      rethrow;
+    } catch (e) {
+      _failPendingCommand(e);
+      rethrow;
+    } finally {
+      if (managePeriodic) _resumePeriodicQuery();
+    }
+  }
+
+  /// 取消等待中的指令（超时、断开或写入失败时调用，避免迟到的应答污染后续请求）
+  void _failPendingCommand([Object? error]) {
+    final c = _pendingCompleter;
+    _pendingCompleter = null;
+    _pendingFuncCode = null;
+    if (c != null && !c.isCompleted) {
+      c.completeError(error ?? StateError('Command cancelled'));
+    }
+  }
+
+  void _pausePeriodicQuery() {
+    _periodicPauseRef++;
+    if (_periodicPauseRef == 1) {
+      _queryTimer?.cancel();
+      _queryTimer = null;
+    }
+  }
+
+  void _resumePeriodicQuery() {
+    if (_periodicPauseRef > 0) _periodicPauseRef--;
+    _startPeriodicQueryIfIdle();
+  }
+
+  void _startPeriodicQueryIfIdle() {
+    if (_periodicPauseRef > 0) return;
     _queryTimer?.cancel();
     _queryTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (isConnected) {
+      if (isConnected && _periodicPauseRef == 0) {
         sendQueryBatteryInfo();
       }
     });
   }
 
   Future<void> disconnect() async {
+    _failPendingCommand(StateError('Disconnected'));
+    _periodicPauseRef = 0;
     _queryTimer?.cancel();
     _queryTimer = null;
     await _notifySub?.cancel();

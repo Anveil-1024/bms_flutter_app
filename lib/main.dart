@@ -7,6 +7,7 @@ import 'screens/bluetooth_scan_screen.dart';
 import 'screens/battery_info_screen.dart';
 import 'screens/battery_detail_screen.dart';
 import 'screens/about_screen.dart';
+import 'screens/maintenance_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -138,6 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 1: return loc.navBatteryInfo;
       case 2: return loc.navBatteryDetail;
       case 3: return loc.navAbout;
+      case 4: return loc.navMaintenance;
       default: return loc.appTitle;
     }
   }
@@ -162,6 +164,10 @@ class _HomeScreenState extends State<HomeScreen> {
               widget.onLanguageChanged();
               setState(() {});
             },
+          ),
+          MaintenanceScreen(
+            bleService: _bleService,
+            loc: loc,
           ),
         ],
       ),
@@ -188,6 +194,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.info_outline),
             selectedIcon: const Icon(Icons.info),
             label: loc.navAbout,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.build_circle_outlined),
+            selectedIcon: const Icon(Icons.build_circle),
+            label: loc.navMaintenance,
           ),
         ],
       ),
