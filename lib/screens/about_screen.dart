@@ -113,7 +113,7 @@ class AboutScreen extends StatelessWidget {
             children: [
               Expanded(
                 child: _languageOption(
-                  loc.chinese,
+                  '中文',
                   loc.language == AppLanguage.zh,
                   () {
                     loc.setLanguage(AppLanguage.zh);
@@ -125,7 +125,7 @@ class AboutScreen extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _languageOption(
-                  loc.english,
+                  'English',
                   loc.language == AppLanguage.en,
                   () {
                     loc.setLanguage(AppLanguage.en);
@@ -199,7 +199,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            '${loc.version}: 1.0.0',
+            '${loc.version}: 1.0.1',
             style: TextStyle(fontSize: 14, color: Colors.grey[700]),
           ),
         ],

@@ -106,7 +106,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         if (mounted) {
           setState(() {
             _scanResults = results
-                .where((r) => r.device.platformName.isNotEmpty)
+                .where((r) =>
+                    r.device.platformName.isNotEmpty &&
+                    r.device.platformName.startsWith('GRT'))
                 .toList();
           });
         }

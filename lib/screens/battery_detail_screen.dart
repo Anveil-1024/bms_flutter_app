@@ -235,6 +235,14 @@ class BatteryDetailScreen extends StatelessWidget {
           _versionRow(loc.hardwareVersion, bmsData.hardwareVersionStr, theme),
           const Divider(height: 24),
           _versionRow(loc.softwareVersion, bmsData.softwareVersionStr, theme),
+          if (bmsData.productLineId.isNotEmpty) ...[
+            const Divider(height: 24),
+            _versionRow(loc.productLineId, bmsData.productLineId, theme),
+          ],
+          if (bmsData.hardwareVersion > 0 || bmsData.softwareVersion > 0) ...[
+            const Divider(height: 24),
+            _versionRow(loc.firmwareVersion, bmsData.firmwareVersion, theme),
+          ],
           if (bmsData.deviceSerial.isNotEmpty) ...[
             const Divider(height: 24),
             _versionRow(loc.deviceSerial, bmsData.deviceSerial, theme),

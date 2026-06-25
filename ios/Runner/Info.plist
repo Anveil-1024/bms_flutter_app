@@ -70,5 +70,16 @@
 	<string>需要蓝牙权限以连接 BMS 设备并读取电池数据</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>需要蓝牙权限以连接 BMS 设备并读取电池数据</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>39.96.159.115</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

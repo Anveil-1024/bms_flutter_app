@@ -1,3 +1,7 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -13,10 +17,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -41,4 +41,32 @@ android {
 
 flutter {
     source = "../.."
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+tasks.register("renameReleaseApk") {
+    doLast {
+        val apkDir = layout.buildDirectory.dir("outputs/flutter-apk").get().asFile
+        val sourceApk = apkDir.resolve("app-release.apk")
+        val targetApk = apkDir.resolve("BmsMonitor-release.apk")
+        if (sourceApk.exists()) {
+            Files.copy(
+                sourceApk.toPath(),
+                targetApk.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            println("Created ${targetApk.absolutePath}")
+        } else {
+            println("Skip renameReleaseApk: source not found -> ${sourceApk.absolutePath}")
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy("renameReleaseApk")
 }

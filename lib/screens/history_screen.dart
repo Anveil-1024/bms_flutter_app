@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/history_event_labels.dart';
 import '../models/history_record.dart';
 import '../services/bms_ble_service.dart';
 
@@ -24,7 +25,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _hasMore = true;
   String? _error;
 
-  static const int _pageSize = 32;
+  /// 单次条数少一些可降低单帧长度，减轻 BLE 透传/默认 MTU 下大包重组压力
+  static const int _pageSize = 16;
 
   AppLocalizations get loc => widget.loc;
 
@@ -62,13 +64,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  String _formatTime(int unix) {
-    if (unix <= 0) return loc.sohUnknown;
-    final dt = DateTime.fromMillisecondsSinceEpoch(unix * 1000);
-    return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -126,7 +121,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '${loc.historyTime}: ${_formatTime(r.unixTime)}',
+                                '${loc.historyEventType}: ${historyEventDisplayName(r.eventType, chinese: loc.language == AppLanguage.zh)}',
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),

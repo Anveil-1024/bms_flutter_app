@@ -20,9 +20,15 @@ class BmsProtocol {
   static const int cmdOtaData = 0x1006;
   static const int cmdOtaEnd = 0x1007;
 
+  /// 与固件 `BLE_TX_BUF_MAX - BLE_FRAME_OVERHEAD` 一致，防止误同步后长时间等满缓冲区
+  static const int maxFramePayloadLength = 631;
+
   static const int otaStatusOk = 0x00;
-  /// 数据包需重发（约定占位）
+  /// 数据包需重发（BMS 将在数据块中携带期望的 offset，4B 小端）
   static const int otaDataRetry = 0x01;
+
+  static const int batteryInfoBaseLength = 52;
+  static const int maxProductLineIdLength = 32;
 
   /// 构建协议帧: 0x55 + 功能码(2B) + 数据长度(2B) + 数据块(NB) + XOR(2B) + 0xAABB
   static Uint8List buildFrame(int functionCode, [List<int>? data]) {
@@ -147,15 +153,14 @@ class BmsProtocol {
 
   static BmsData? parseBatteryInfo(List<int> frame) {
     if (!validateFrame(frame)) return null;
+    if (funcCodeOf(frame) != cmdQueryBatteryInfo) return null;
+    final payload = extractPayload(frame);
+    if (payload == null) return null;
+    return parseBatteryInfoPayload(payload);
+  }
 
-    final funcCode = funcCodeOf(frame);
-    if (funcCode != cmdQueryBatteryInfo) return null;
-
-    final dataLen = (frame[3] << 8) | frame[4];
-    if (frame.length < 5 + dataLen + 4) return null;
-
-    final d = frame.sublist(5, 5 + dataLen);
-    if (d.length < 52) return null;
+  static BmsData? parseBatteryInfoPayload(List<int> d) {
+    if (d.length < batteryInfoBaseLength) return null;
 
     int pos = 0;
 
@@ -238,6 +243,16 @@ class BmsProtocol {
     pos += 1;
 
     final swVer = d[pos] & 0xFF;
+    pos += 1;
+
+    var productLineId = '';
+    if (pos < d.length) {
+      final plLen = (d[pos] & 0xFF).clamp(0, maxProductLineIdLength);
+      pos += 1;
+      if (plLen > 0 && pos + plLen <= d.length) {
+        productLineId = String.fromCharCodes(d.sublist(pos, pos + plLen));
+      }
+    }
 
     return BmsData(
       deviceSerial: serial,
@@ -266,6 +281,7 @@ class BmsProtocol {
       maxDischargeCurrent: maxDischargeCur,
       hardwareVersion: hwVer,
       softwareVersion: swVer,
+      productLineId: productLineId,
     );
   }
 
@@ -298,6 +314,7 @@ class BmsProtocol {
 class BmsBleService {
   static const String notifyCharUuid = '0000fff1-0000-1000-8000-00805f9b34fb';
   static const String writeCharUuid = '0000fff2-0000-1000-8000-00805f9b34fb';
+  static const bool enableOtaDebugLog = true;
 
   /// 默认 OTA 分包大小（字节）；升级前可尝试 requestMtu 后略增大
   static const int defaultOtaChunkSize = 128;
@@ -363,6 +380,12 @@ class BmsBleService {
     await _notifyChar!.setNotifyValue(true);
     _notifySub = _notifyChar!.lastValueStream.listen(_onNotifyData);
 
+    try {
+      await device.requestMtu(247);
+    } catch (_) {
+      /* 部分机型/从机不支持；历史记录大包依赖默认分包重组 */
+    }
+
     await Future.delayed(const Duration(milliseconds: 300));
     await sendQueryBatteryInfo();
     _startPeriodicQueryIfIdle();
@@ -370,6 +393,9 @@ class BmsBleService {
 
   void _onNotifyData(List<int> value) {
     if (value.isEmpty) return;
+    if (enableOtaDebugLog) {
+      print('[BLE][RX-CHUNK] len=${value.length} ${_hex(value)}');
+    }
     _rxBuffer.addAll(value);
     _tryParseFrames();
   }
@@ -388,6 +414,10 @@ class BmsBleService {
       if (_rxBuffer.length < 5) return;
 
       final dataLen = (_rxBuffer[3] << 8) | _rxBuffer[4];
+      if (dataLen > BmsProtocol.maxFramePayloadLength) {
+        _rxBuffer.removeAt(0);
+        continue;
+      }
       final totalLen = 5 + dataLen + 4;
 
       if (_rxBuffer.length < totalLen) return;
@@ -401,11 +431,30 @@ class BmsBleService {
       }
 
       final funcCode = BmsProtocol.funcCodeOf(frame);
+      if (enableOtaDebugLog &&
+          (funcCode == BmsProtocol.cmdOtaBegin ||
+              funcCode == BmsProtocol.cmdOtaData ||
+              funcCode == BmsProtocol.cmdOtaEnd)) {
+        print(
+          '[BLE][RX-FRAME] func=0x${funcCode.toRadixString(16).padLeft(4, '0')} '
+          'len=$totalLen ${_hex(frame)}',
+        );
+      }
 
       if (funcCode == BmsProtocol.cmdQueryBatteryInfo) {
         final data = BmsProtocol.parseBatteryInfo(frame);
         if (data != null) {
           _bmsDataController.add(data);
+        }
+        if (_pendingCompleter != null &&
+            !_pendingCompleter!.isCompleted &&
+            _pendingFuncCode == BmsProtocol.cmdQueryBatteryInfo) {
+          final payload = BmsProtocol.extractPayload(frame);
+          if (payload != null) {
+            _pendingCompleter!.complete(payload);
+            _pendingCompleter = null;
+            _pendingFuncCode = null;
+          }
         }
         continue;
       }
@@ -418,6 +467,10 @@ class BmsBleService {
           _pendingCompleter!.complete(payload);
           _pendingCompleter = null;
           _pendingFuncCode = null;
+        } else {
+          _failPendingCommand(
+            StateError('应答帧校验失败（长度或 XOR 与 0xAABB 尾不符）'),
+          );
         }
       }
     }
@@ -427,6 +480,18 @@ class BmsBleService {
     if (_writeChar == null || !isConnected) return;
     final frame = BmsProtocol.buildQueryBatteryInfo();
     await _writeChar!.write(frame.toList(), withoutResponse: false);
+  }
+
+  /// 主动查询电池信息并等待应答（含产品线/固件版本扩展字段）
+  Future<BmsData?> queryBatteryInfo({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final payload = await _sendCommandAndWait(
+      BmsProtocol.cmdQueryBatteryInfo,
+      BmsProtocol.buildQueryBatteryInfo(),
+      timeout: timeout,
+    );
+    return BmsProtocol.parseBatteryInfoPayload(payload);
   }
 
   /// 读取 SOH（0~100）；失败或空应答返回 null
@@ -444,7 +509,7 @@ class BmsBleService {
   Future<List<HistoryRecord>> readHistoryPage(
     int startIndex,
     int count, {
-    Duration timeout = const Duration(seconds: 8),
+    Duration timeout = const Duration(seconds: 12),
   }) async {
     final payload = await _sendCommandAndWait(
       BmsProtocol.cmdReadHistory,
@@ -485,6 +550,12 @@ class BmsBleService {
         timeout: stepTimeout,
         managePeriodic: false,
       );
+      if (enableOtaDebugLog) {
+        print(
+          '[OTA] begin ack payload len=${beginResp.length} ${_hex(beginResp)} '
+          'image=${image.length} crc=0x${crc.toRadixString(16).padLeft(8, '0')}',
+        );
+      }
       if (beginResp.isEmpty || beginResp[0] != BmsProtocol.otaStatusOk) {
         throw OtaException(
           'OTA begin rejected',
@@ -498,12 +569,20 @@ class BmsBleService {
         Uint8List chunk = image.sublist(offset, offset + len);
 
         while (true) {
+          if (enableOtaDebugLog) {
+            print(
+              '[OTA] send data offset=$offset len=$len total=${image.length}',
+            );
+          }
           final dataResp = await _sendCommandAndWait(
             BmsProtocol.cmdOtaData,
             BmsProtocol.buildOtaData(offset, chunk),
             timeout: stepTimeout,
             managePeriodic: false,
           );
+          if (enableOtaDebugLog) {
+            print('[OTA] data ack payload len=${dataResp.length} ${_hex(dataResp)}');
+          }
           if (dataResp.isEmpty) {
             throw OtaException('OTA data: empty response');
           }
@@ -514,6 +593,23 @@ class BmsBleService {
             break;
           }
           if (st == BmsProtocol.otaDataRetry) {
+            // BMS 请求重发：检查响应中是否携带期望的 offset
+            if (dataResp.length >= 5) {
+              // 读取 BMS 期望的 offset（4B 小端）
+              final expectedOffset = (dataResp[1] & 0xFF) |
+                  ((dataResp[2] & 0xFF) << 8) |
+                  ((dataResp[3] & 0xFF) << 16) |
+                  ((dataResp[4] & 0xFF) << 24);
+              
+              if (expectedOffset != offset) {
+                // 发生丢包，回退到 BMS 期望的位置
+                print('OTA: 检测到丢包，回退 $offset -> $expectedOffset');
+                offset = expectedOffset;
+                final newLen = min(effectiveChunk, image.length - offset);
+                chunk = image.sublist(offset, offset + newLen);
+              }
+              // 如果 expectedOffset == offset，说明当前包损坏，继续重发当前包
+            }
             continue;
           }
           throw OtaException('OTA data failed', st);
@@ -526,6 +622,9 @@ class BmsBleService {
         timeout: stepTimeout,
         managePeriodic: false,
       );
+      if (enableOtaDebugLog) {
+        print('[OTA] end ack payload len=${endResp.length} ${_hex(endResp)}');
+      }
       if (endResp.isEmpty || endResp[0] != BmsProtocol.otaStatusOk) {
         throw OtaException(
           'OTA end failed',
@@ -557,9 +656,24 @@ class BmsBleService {
     _pendingFuncCode = expectedFuncCode;
 
     try {
+      if (enableOtaDebugLog &&
+          (expectedFuncCode == BmsProtocol.cmdOtaBegin ||
+              expectedFuncCode == BmsProtocol.cmdOtaData ||
+              expectedFuncCode == BmsProtocol.cmdOtaEnd)) {
+        print(
+          '[BLE][TX] expect=0x${expectedFuncCode.toRadixString(16).padLeft(4, '0')} '
+          'len=${frame.length} ${_hex(frame)}',
+        );
+      }
       await _writeChar!.write(frame.toList(), withoutResponse: false);
       return await completer.future.timeout(timeout);
     } on TimeoutException catch (e) {
+      if (enableOtaDebugLog) {
+        print(
+          '[BLE][TIMEOUT] expect=0x${expectedFuncCode.toRadixString(16).padLeft(4, '0')} '
+          'timeout_ms=${timeout.inMilliseconds}',
+        );
+      }
       _failPendingCommand(e);
       rethrow;
     } catch (e) {
@@ -623,5 +737,9 @@ class BmsBleService {
     stopScan();
     disconnect();
     _bmsDataController.close();
+  }
+
+  static String _hex(List<int> bytes) {
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
   }
 }

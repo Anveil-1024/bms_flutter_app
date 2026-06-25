@@ -305,23 +305,88 @@ class BatteryInfoScreen extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _infoTile(
+          child: _capacityTile(
             loc.remainCapacity,
-            '${bmsData.remainCapacity} mAh',
+            '${bmsData.remainCapacityMah}',
+            'mAh',
             Icons.battery_charging_full,
             theme,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _infoTile(
+          child: _capacityTile(
             loc.ratedCapacity,
-            '${bmsData.ratedCapacityAh.toStringAsFixed(1)} Ah',
+            bmsData.ratedCapacityAh.toStringAsFixed(1),
+            'Ah',
             Icons.battery_full,
             theme,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _capacityTile(
+    String label,
+    String value,
+    String unit,
+    IconData icon,
+    ThemeData theme,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: theme.colorScheme.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  unit,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

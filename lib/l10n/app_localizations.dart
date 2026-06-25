@@ -101,6 +101,8 @@ class AppLocalizations extends ChangeNotifier {
   String get versionSection => _t('版本信息', 'Version Info');
   String get hardwareVersion => _t('硬件版本', 'Hardware Version');
   String get softwareVersion => _t('软件版本', 'Software Version');
+  String get productLineId => _t('产品线', 'Product line');
+  String get firmwareVersion => _t('固件版本', 'Firmware version');
 
   String faultName(String key) {
     const zhMap = {
@@ -172,17 +174,33 @@ class AppLocalizations extends ChangeNotifier {
   String get historyTitle => _t('历史记录', 'History');
   String get historyLoadMore => _t('加载更多', 'Load more');
   String get historyEmpty => _t('暂无记录', 'No records');
-  String get historyTime => _t('时间', 'Time');
+  String get historyEventType => _t('事件类型', 'Event type');
   String get historyVoltage => _t('总电压', 'Voltage');
   String get historyCurrent => _t('电流', 'Current');
   String get historySoc => _t('SOC', 'SOC');
   String get historyFailed => _t('读取失败', 'Read failed');
   String get otaTitle => _t('OTA 升级', 'OTA Update');
-  String get otaPickFile => _t('选择固件文件', 'Select firmware');
-  String get otaStart => _t('开始升级', 'Start update');
-  String get otaInProgress => _t('升级中…', 'Updating…');
+  String get otaCheckUpdate => _t('检查更新', 'Check for updates');
+  String get otaChecking => _t('正在检查…', 'Checking…');
+  String get otaDownloadAndUpgrade => _t('下载并升级', 'Download and update');
+  String get otaLocalUpgrade => _t('本地文件升级', 'Local file update');
+  String get otaInProgress => _t('蓝牙升级中…', 'Updating over BLE…');
+  String get otaDownloading => _t('正在下载固件…', 'Downloading firmware…');
+  String get otaPickFirmwareFailed =>
+      _t('请选择有效的固件文件', 'Please choose a valid firmware file');
   String get otaSuccess => _t('升级流程已完成', 'Update sequence completed');
-  String get otaSelectFileFirst => _t('请先选择固件', 'Select a firmware file first');
+  String get otaUpToDate => _t('已是最新版本', 'Already up to date');
+  String get otaUpdateAvailable => _t('发现新版本', 'Update available');
+  String get otaUnsupportedProduct =>
+      _t('服务器不支持该设备型号', 'Device model not supported on server');
+  String get otaNoFirmwareOnServer =>
+      _t('服务器暂无可用固件', 'No firmware on server');
+  String get otaNoProductLine =>
+      _t('设备未上报产品线信息，请升级设备固件或联系技术支持', 'Device did not report product line; update device firmware or contact support');
+  String get otaNeedConnect => _t('请先连接 BMS 设备', 'Connect to a BMS device first');
+  String get otaCurrentVersion => _t('当前版本', 'Current version');
+  String get otaLatestVersion => _t('最新版本', 'Latest version');
+  String get otaProductName => _t('产品', 'Product');
   String otaErrorMsg(String e) => _t('错误: $e', 'Error: $e');
 
   String _t(String zh, String en) => _language == AppLanguage.zh ? zh : en;

@@ -19,7 +19,7 @@ class BmsData {
   final int minTemp;
   // 10. MOS温度 (offset +40)
   final int mosTemp;
-  // 11. 剩余容量 (mAh)
+  // 11. 剩余容量 (10mAh)
   final int remainCapacity;
   // 12. 额定容量 (0.1Ah)
   final int ratedCapacity;
@@ -43,14 +43,16 @@ class BmsData {
   final int chargeOtp;
   // 22. 放电高温保护值 (1°C, offset +40)
   final int dischargeOtp;
-  // 23. 最大允许充电电流 (1A)
+  // 23. 最大允许充电电流 (0.1A)
   final int maxChargeCurrent;
-  // 24. 最大允许放电电流 (1A)
+  // 24. 最大允许放电电流 (0.1A)
   final int maxDischargeCurrent;
   // 25. 硬件版本
   final int hardwareVersion;
   // 26. 软件版本
   final int softwareVersion;
+  // 27~28. 产品线 ID（ASCII，与升级服务器 product_id 一致）
+  final String productLineId;
 
   const BmsData({
     this.deviceSerial = '',
@@ -79,6 +81,7 @@ class BmsData {
     this.maxDischargeCurrent = 0,
     this.hardwareVersion = 0,
     this.softwareVersion = 0,
+    this.productLineId = '',
   });
 
   // ---------- 便捷访问方法 ----------
@@ -94,7 +97,8 @@ class BmsData {
   double get minTempC => minTemp - 40.0;
   double get mosTempC => mosTemp - 40.0;
 
-  double get remainCapacityAh => remainCapacity / 1000.0;
+  int get remainCapacityMah => remainCapacity * 10;
+  double get remainCapacityAh => remainCapacity / 100.0;
   double get ratedCapacityAh => ratedCapacity / 10.0;
 
   bool get chargeMosOn => (switchStatus & 0x01) != 0;
@@ -103,8 +107,8 @@ class BmsData {
 
   double get dischargeOcpA => dischargeOcp / 10.0;
   double get chargeOcpA => chargeOcp / 10.0;
-  double get maxChargeCurrentA => maxChargeCurrent.toDouble();
-  double get maxDischargeCurrentA => maxDischargeCurrent.toDouble();
+  double get maxChargeCurrentA => maxChargeCurrent / 10.0;
+  double get maxDischargeCurrentA => maxDischargeCurrent / 10.0;
   double get cellOvpV => cellOvp / 1000.0;
   double get cellUvpV => cellUvp / 1000.0;
   double get chargeOtpC => (chargeOtp - 40).toDouble();
@@ -123,6 +127,20 @@ class BmsData {
 
   String get hardwareVersionStr => 'V${hardwareVersion > 0 ? hardwareVersion : "-"}';
   String get softwareVersionStr => 'V${softwareVersion > 0 ? softwareVersion : "-"}';
+
+  /// 固件版本号：硬件/软件版本各 1 字节，按十进制各格式化为 2 位后拼接（如 0x01、0x0C → `0112`）
+  String get firmwareVersion => composeFirmwareVersion(
+        hardwareVersion,
+        softwareVersion,
+      );
+
+  static String composeFirmwareVersion(int hardwareVersion, int softwareVersion) {
+    final hw = (hardwareVersion & 0xFF).toString().padLeft(2, '0');
+    final sw = (softwareVersion & 0xFF).toString().padLeft(2, '0');
+    return '$hw$sw';
+  }
+
+  bool get hasOtaIdentity => productLineId.isNotEmpty;
 
   static const Map<int, String> faultBitNames = {
     0: 'dischargeOverCurrent',
