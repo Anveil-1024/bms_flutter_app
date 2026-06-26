@@ -7,6 +7,27 @@ import '../models/bms_data.dart';
 
 enum _BtStatus { init, turnOn, ready, scanning, noDevice, selectDevice, connecting, connected, disconnected, scanError, connectError, unavailable }
 
+/// iOS 扫描时 platformName 常为空，须优先用广播名 advName。
+String _bleDisplayName(ScanResult r) {
+  final adv = r.advertisementData.advName.trim();
+  if (adv.isNotEmpty) return adv;
+  final platform = r.device.platformName.trim();
+  if (platform.isNotEmpty) return platform;
+  return r.device.remoteId.str;
+}
+
+bool _isGrtDevice(ScanResult r) {
+  return _bleDisplayName(r).toUpperCase().startsWith('GRT');
+}
+
+List<ScanResult> _dedupeScanResults(List<ScanResult> results) {
+  final map = <String, ScanResult>{};
+  for (final r in results) {
+    map[r.device.remoteId.str] = r;
+  }
+  return map.values.toList();
+}
+
 class BluetoothScanScreen extends StatefulWidget {
   final BmsBleService bleService;
   final AppLocalizations loc;
@@ -105,11 +126,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
       _scanSub = _bleService.scanResults.listen((results) {
         if (mounted) {
           setState(() {
-            _scanResults = results
-                .where((r) =>
-                    r.device.platformName.isNotEmpty &&
-                    r.device.platformName.startsWith('GRT'))
-                .toList();
+            _scanResults = _dedupeScanResults(
+              results.where(_isGrtDevice).toList(),
+            );
           });
         }
       });
@@ -134,9 +153,12 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
     }
   }
 
-  void _connect(BluetoothDevice device) async {
+  void _connect(BluetoothDevice device, {String? displayName}) async {
     if (_connectingDeviceId != null || _bleService.isConnected) return;
-    final name = device.platformName.isNotEmpty ? device.platformName : device.remoteId.toString();
+    final name = displayName ??
+        (device.platformName.trim().isNotEmpty
+            ? device.platformName.trim()
+            : device.remoteId.str);
     setState(() {
       _connectingDeviceId = device.remoteId.str;
       _btStatus = _BtStatus.connecting;
@@ -321,7 +343,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
 
   Widget _deviceTile(ScanResult result, ThemeData theme) {
     final device = result.device;
-    final name = device.platformName.isNotEmpty ? device.platformName : device.remoteId.toString();
+    final name = _bleDisplayName(result);
     final rssi = result.rssi;
     final signalStrength = rssi > -60 ? 3 : (rssi > -80 ? 2 : 1);
 
@@ -369,7 +391,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
               )
             : IconButton(
                 icon: Icon(Icons.link, color: theme.colorScheme.primary),
-                onPressed: _connectingDeviceId != null ? null : () => _connect(device),
+                onPressed: _connectingDeviceId != null ? null : () => _connect(device, displayName: name),
                 tooltip: loc.btConnect,
               ),
       ),

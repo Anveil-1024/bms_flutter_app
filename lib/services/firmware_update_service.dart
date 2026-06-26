@@ -1,58 +1,84 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/firmware_update.dart';
+import 'platform_http_client.dart';
 
 class FirmwareUpdateService {
   static const String defaultBaseUrl = 'http://39.96.159.115';
 
   final String baseUrl;
   final http.Client _client;
+  final bool _ownsClient;
 
   FirmwareUpdateService({
     String? baseUrl,
     http.Client? client,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
-        _client = client ?? http.Client();
+        _client = client ?? createPlatformHttpClient(),
+        _ownsClient = client == null;
 
   Uri _manifestUri() => Uri.parse('$baseUrl/api/version.json');
 
   Future<FirmwareManifest> fetchManifest() async {
-    final resp = await _client.get(
-      _manifestUri(),
-      headers: {'Cache-Control': 'no-cache'},
-    );
-    if (resp.statusCode != 200) {
-      throw FirmwareUpdateException(
-        '版本清单请求失败 (${resp.statusCode})',
-      );
-    }
+    try {
+      final resp = await _client
+          .get(
+            _manifestUri(),
+            headers: {'Cache-Control': 'no-cache'},
+          )
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode != 200) {
+        throw FirmwareUpdateException(
+          '版本清单请求失败 (${resp.statusCode})',
+        );
+      }
 
-    final json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
-    final resolvedBase =
-        (json['base_url'] as String?)?.trim().replaceAll(RegExp(r'/+$'), '') ??
-            baseUrl;
+      final json =
+          jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+      final resolvedBase =
+          (json['base_url'] as String?)?.trim().replaceAll(RegExp(r'/+$'), '') ??
+              baseUrl;
 
-    final batteryRaw = json['battery_update'];
-    final batteryUpdate = <String, ProductFirmwareInfo>{};
-    if (batteryRaw is Map<String, dynamic>) {
-      for (final entry in batteryRaw.entries) {
-        if (entry.value is Map<String, dynamic>) {
-          batteryUpdate[entry.key] = _parseProductInfo(
-            entry.key,
-            entry.value as Map<String, dynamic>,
-          );
+      final batteryRaw = json['battery_update'];
+      final batteryUpdate = <String, ProductFirmwareInfo>{};
+      if (batteryRaw is Map<String, dynamic>) {
+        for (final entry in batteryRaw.entries) {
+          if (entry.value is Map<String, dynamic>) {
+            batteryUpdate[entry.key] = _parseProductInfo(
+              entry.key,
+              entry.value as Map<String, dynamic>,
+            );
+          }
         }
       }
-    }
 
-    return FirmwareManifest(
-      baseUrl: resolvedBase,
-      batteryUpdate: batteryUpdate,
-    );
+      return FirmwareManifest(
+        baseUrl: resolvedBase,
+        batteryUpdate: batteryUpdate,
+      );
+    } on FirmwareUpdateException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw FirmwareUpdateException(_networkErrorHint(e.message));
+    } on HttpException catch (e) {
+      throw FirmwareUpdateException(_networkErrorHint(e.message));
+    } on Exception catch (e) {
+      throw FirmwareUpdateException(_networkErrorHint('$e'));
+    }
+  }
+
+  String _networkErrorHint(String detail) {
+    if (detail.contains('65') ||
+        detail.toLowerCase().contains('no route to host')) {
+      return '无法连接升级服务器（$detail）。请确认已开启 WiFi 或蜂窝数据，'
+          '并关闭 VPN 后重试；若 Safari 能打开而 App 不能，请更新到最新版 App 后重试。';
+    }
+    return '网络请求失败：$detail';
   }
 
   ProductFirmwareInfo _parseProductInfo(
@@ -150,41 +176,53 @@ class FirmwareUpdateService {
     required String expectedSha256,
     void Function(double progress)? onProgress,
   }) async {
-    final uri = Uri.parse(downloadUrl);
-    final request = http.Request('GET', uri);
-    final streamed = await _client.send(request);
-    if (streamed.statusCode != 200) {
-      throw FirmwareUpdateException(
-        '固件下载失败 (${streamed.statusCode})',
+    try {
+      final uri = Uri.parse(downloadUrl);
+      final request = http.Request('GET', uri);
+      final streamed = await _client.send(request).timeout(
+        const Duration(minutes: 5),
       );
-    }
-
-    final contentLength = streamed.contentLength;
-    final bytes = <int>[];
-    await for (final chunk in streamed.stream) {
-      bytes.addAll(chunk);
-      if (contentLength != null && contentLength > 0 && onProgress != null) {
-        onProgress(bytes.length / contentLength);
+      if (streamed.statusCode != 200) {
+        throw FirmwareUpdateException(
+          '固件下载失败 (${streamed.statusCode})',
+        );
       }
-    }
 
-    if (bytes.length != expectedSize) {
-      throw FirmwareUpdateException(
-        '固件大小校验失败（期望 $expectedSize 字节，实际 ${bytes.length} 字节）',
-      );
-    }
+      final contentLength = streamed.contentLength;
+      final bytes = <int>[];
+      await for (final chunk in streamed.stream) {
+        bytes.addAll(chunk);
+        if (contentLength != null && contentLength > 0 && onProgress != null) {
+          onProgress(bytes.length / contentLength);
+        }
+      }
 
-    final digest = sha256.convert(bytes).toString();
-    final expected = expectedSha256.toLowerCase();
-    if (digest != expected) {
-      throw FirmwareUpdateException('固件 SHA-256 校验失败');
-    }
+      if (bytes.length != expectedSize) {
+        throw FirmwareUpdateException(
+          '固件大小校验失败（期望 $expectedSize 字节，实际 ${bytes.length} 字节）',
+        );
+      }
 
-    onProgress?.call(1.0);
-    return Uint8List.fromList(bytes);
+      final digest = sha256.convert(bytes).toString();
+      final expected = expectedSha256.toLowerCase();
+      if (digest != expected) {
+        throw FirmwareUpdateException('固件 SHA-256 校验失败');
+      }
+
+      onProgress?.call(1.0);
+      return Uint8List.fromList(bytes);
+    } on FirmwareUpdateException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw FirmwareUpdateException(_networkErrorHint(e.message));
+    } on Exception catch (e) {
+      throw FirmwareUpdateException(_networkErrorHint('$e'));
+    }
   }
 
   void dispose() {
-    _client.close();
+    if (_ownsClient) {
+      _client.close();
+    }
   }
 }

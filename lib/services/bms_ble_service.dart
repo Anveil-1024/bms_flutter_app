@@ -339,7 +339,10 @@ class BmsBleService {
   bool get isConnected => _device?.isConnected ?? false;
 
   Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
-    await FlutterBluePlus.startScan(timeout: timeout);
+    await FlutterBluePlus.startScan(
+      timeout: timeout,
+      withKeywords: const ['GRT'],
+    );
   }
 
   Stream<List<ScanResult>> get scanResults => FlutterBluePlus.scanResults;
@@ -351,7 +354,7 @@ class BmsBleService {
   Future<void> connect(BluetoothDevice device) async {
     await disconnect();
     _device = device;
-    await device.connect();
+    await device.connect(autoConnect: false);
     await _discoverAndSubscribe(device);
   }
 
@@ -727,9 +730,14 @@ class BmsBleService {
     _notifyChar = null;
     _writeChar = null;
     _rxBuffer.clear();
-    if (_device != null) {
-      await _device!.disconnect();
-      _device = null;
+    final device = _device;
+    _device = null;
+    if (device != null) {
+      try {
+        await device.disconnect();
+      } catch (_) {
+        /* iOS 可能已断开 */
+      }
     }
   }
 
