@@ -9,24 +9,28 @@ import 'screens/battery_detail_screen.dart';
 import 'screens/about_screen.dart';
 import 'screens/maintenance_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
   ));
-  runApp(const MyApp());
+  final loc = AppLocalizations();
+  await loc.loadSavedLanguage();
+  runApp(MyApp(loc: loc));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  final AppLocalizations loc;
+
+  const MyApp({super.key, required this.loc});
 
   @override
   State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
-  final AppLocalizations _loc = AppLocalizations();
+  AppLocalizations get _loc => widget.loc;
 
   @override
   Widget build(BuildContext context) {

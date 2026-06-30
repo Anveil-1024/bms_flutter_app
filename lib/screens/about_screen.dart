@@ -115,8 +115,8 @@ class AboutScreen extends StatelessWidget {
                 child: _languageOption(
                   '中文',
                   loc.language == AppLanguage.zh,
-                  () {
-                    loc.setLanguage(AppLanguage.zh);
+                  () async {
+                    await loc.setLanguage(AppLanguage.zh);
                     onLanguageChanged();
                   },
                   theme,
@@ -127,8 +127,8 @@ class AboutScreen extends StatelessWidget {
                 child: _languageOption(
                   'English',
                   loc.language == AppLanguage.en,
-                  () {
-                    loc.setLanguage(AppLanguage.en);
+                  () async {
+                    await loc.setLanguage(AppLanguage.en);
                     onLanguageChanged();
                   },
                   theme,

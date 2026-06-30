@@ -1,14 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum AppLanguage { zh, en }
 
 class AppLocalizations extends ChangeNotifier {
+  static const _languageKey = 'app_language';
+
   AppLanguage _language = AppLanguage.zh;
 
   AppLanguage get language => _language;
 
-  void setLanguage(AppLanguage lang) {
+  Future<void> loadSavedLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final code = prefs.getString(_languageKey);
+    if (code == 'en') {
+      _language = AppLanguage.en;
+    } else if (code == 'zh') {
+      _language = AppLanguage.zh;
+    }
+    notifyListeners();
+  }
+
+  Future<void> setLanguage(AppLanguage lang) async {
     _language = lang;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _languageKey,
+      lang == AppLanguage.en ? 'en' : 'zh',
+    );
     notifyListeners();
   }
 
