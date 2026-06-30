@@ -36,4 +36,18 @@ if [ ! -f "ios/Flutter/Generated.xcconfig" ]; then
   exit 1
 fi
 
+echo "==> Ensure CocoaPods dependencies"
+cd "$REPO_ROOT/ios"
+if ! pod install; then
+  echo "pod install failed, retrying with --repo-update"
+  pod install --repo-update
+fi
+
+if [ ! -f "Pods/Target Support Files/file_picker/file_picker.debug.xcconfig" ]; then
+  echo "error: file_picker pod was not generated"
+  ls -la "Pods/Target Support Files" || true
+  exit 1
+fi
+
+cd "$REPO_ROOT"
 echo "==> ci_pre_xcodebuild done"
