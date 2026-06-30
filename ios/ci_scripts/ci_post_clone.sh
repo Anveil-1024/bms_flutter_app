@@ -39,4 +39,10 @@ echo "==> CocoaPods"
 cd ios
 pod install
 
+# Persist Flutter path for ci_pre_xcodebuild.sh (separate shell session).
+cat > "$CI_PRIMARY_REPOSITORY_PATH/ios/ci_scripts/ci_env.sh" <<EOF
+export FLUTTER_HOME="$FLUTTER_HOME"
+export PATH="\$PATH:\$FLUTTER_HOME/bin"
+EOF
+
 echo "==> ci_post_clone done"
