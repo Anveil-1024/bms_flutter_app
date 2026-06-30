@@ -61,12 +61,12 @@ class AboutScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              loc.logoPlaceholder,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-                fontStyle: FontStyle.italic,
+              loc.appTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
               ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),

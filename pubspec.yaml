@@ -1,5 +1,5 @@
 name: bms_flutter_app
-description: "BMS Battery Monitor Flutter App"
+description: "GRB Link — BMS BLE monitor app"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -49,6 +49,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.8
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -96,3 +97,12 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "图标.jpg"
+
+flutter_native_splash:
+  color: "#E8F4FD"
+  image: 图标.jpg
+  android: true
+  ios: true
+  android_12:
+    color: "#E8F4FD"
+    image: 图标.jpg

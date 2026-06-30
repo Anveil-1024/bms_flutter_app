@@ -31,7 +31,10 @@ class AppLocalizations extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get appTitle => _t('BMS 电池管理', 'BMS Battery Manager');
+  /// 系统桌面/商店用的短名称（建议 ≤12 字符，避免 iOS 图标下换行挤在一起）
+  static const launcherName = 'GRB Link';
+
+  String get appTitle => 'GRB Link';
 
   // Bottom nav
   String get navBluetooth => _t('蓝牙搜索', 'Bluetooth');

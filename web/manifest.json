@@ -1,6 +1,6 @@
 {
-    "name": "BMS Monitor",
-    "short_name": "BMS Monitor",
+    "name": "GRB Link",
+    "short_name": "GRB Link",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
