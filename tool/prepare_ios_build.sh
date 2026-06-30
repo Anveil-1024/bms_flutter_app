@@ -7,11 +7,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENDOR="$ROOT/ios/Vendor/DKImagePickerController"
 PKG="$ROOT/ios/Flutter/ephemeral/Packages/.packages/file_picker-"*/Package.swift
 
-if [ ! -d "$VENDOR" ]; then
-  echo "Cloning DKImagePickerController to ios/Vendor..."
+clone_vendor() {
   mkdir -p "$ROOT/ios/Vendor"
+  echo "Cloning DKImagePickerController to ios/Vendor..."
+  # Prefer GitHub (works on Xcode Cloud / overseas); fall back to gitee mirror for China.
+  if git clone --depth 1 --branch 4.3.9 \
+      https://github.com/zhangao0086/DKImagePickerController.git "$VENDOR"; then
+    return 0
+  fi
+  echo "GitHub clone failed, trying gitee mirror..."
+  rm -rf "$VENDOR"
   git clone --depth 1 --branch 4.3.9 \
     https://gitee.com/mirrors/DKImagePickerController.git "$VENDOR"
+}
+
+if [ ! -d "$VENDOR" ]; then
+  clone_vendor
 fi
 
 shopt -s nullglob
