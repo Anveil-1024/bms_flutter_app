@@ -23,6 +23,8 @@ export PATH="$PATH:$FLUTTER_HOME/bin"
 echo "==> Flutter setup"
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 flutter --version
+# Force CocoaPods plugin integration for this project in cloud CI.
+flutter config --no-enable-swift-package-manager
 flutter precache --ios
 flutter pub get
 
