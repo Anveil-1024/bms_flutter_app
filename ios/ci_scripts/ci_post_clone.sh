@@ -5,6 +5,8 @@ set -e
 echo "==> Environment"
 echo "CI_PRIMARY_REPOSITORY_PATH=${CI_PRIMARY_REPOSITORY_PATH:-<unset>}"
 echo "CI_XCODECLOUD=${CI_XCODECLOUD:-<unset>}"
+echo "CI_XCODE_CLOUD=${CI_XCODE_CLOUD:-<unset>}"
+echo "CI_WORKSPACE=${CI_WORKSPACE:-<unset>}"
 
 # --- Install Flutter ---
 FLUTTER_HOME="${FLUTTER_HOME:-$HOME/flutter}"
@@ -25,9 +27,13 @@ flutter precache --ios
 flutter pub get
 
 # --- Vendor patch (local/China only; skip on Xcode Cloud) ---
-# prepare_ios_build.sh clones from gitee.com which fails on Apple CI (git exit 128).
-# Xcode Cloud can reach GitHub directly, so file_picker SPM deps work without patching.
-if [ "${CI_XCODECLOUD:-}" = "TRUE" ]; then
+# prepare_ios_build.sh may clone mirror repos; avoid that on cloud builders.
+IS_XCODE_CLOUD="false"
+if [ -n "${CI_XCODE_CLOUD:-}" ] || [ "${CI_XCODECLOUD:-}" = "TRUE" ] || [ -n "${CI_WORKSPACE:-}" ]; then
+  IS_XCODE_CLOUD="true"
+fi
+
+if [ "$IS_XCODE_CLOUD" = "true" ]; then
   echo "==> Xcode Cloud: skip Vendor patch (GitHub SPM)"
 else
   echo "==> Prepare iOS vendor deps"
@@ -38,11 +44,5 @@ fi
 echo "==> CocoaPods"
 cd ios
 pod install
-
-# Persist Flutter path for ci_pre_xcodebuild.sh (separate shell session).
-cat > "$CI_PRIMARY_REPOSITORY_PATH/ios/ci_scripts/ci_env.sh" <<EOF
-export FLUTTER_HOME="$FLUTTER_HOME"
-export PATH="\$PATH:\$FLUTTER_HOME/bin"
-EOF
 
 echo "==> ci_post_clone done"

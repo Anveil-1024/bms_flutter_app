@@ -17,7 +17,7 @@ if [ ! -d "$REPO_ROOT" ]; then
 fi
 cd "$REPO_ROOT"
 
-echo "==> Sync Flutter iOS build configuration"
+echo "==> Validate Flutter environment"
 if ! command -v flutter >/dev/null 2>&1; then
   echo "==> Flutter not found, installing stable channel"
   rm -rf "$FLUTTER_HOME"
@@ -27,7 +27,13 @@ fi
 
 flutter --version
 
-# --no-codesign avoids prebuild signing checks in cloud pre-build stage.
-flutter build ios --config-only --release --no-codesign
+# Keep Generated.xcconfig in sync without invoking flutter iOS build.
+# In Xcode Cloud, `flutter build ios --config-only` may trigger experimental
+# SPM integration and fail when automatic package resolution is disabled.
+flutter pub get
+if [ ! -f "ios/Flutter/Generated.xcconfig" ]; then
+  echo "error: ios/Flutter/Generated.xcconfig not found after flutter pub get"
+  exit 1
+fi
 
 echo "==> ci_pre_xcodebuild done"
