@@ -33,9 +33,6 @@ migrate_working_dir/
 /build/
 /coverage/
 
-# Xcode Cloud generated at build time
-ios/ci_scripts/ci_env.sh
-
 # Symbolication related
 app.*.symbols
 
