@@ -2,7 +2,8 @@
 # Xcode Cloud: runs before xcodebuild Archive, syncs Flutter build settings.
 set -e
 
-export PATH="$PATH:$HOME/flutter/bin"
+FLUTTER_HOME="${FLUTTER_HOME:-$HOME/flutter}"
+export PATH="$PATH:$FLUTTER_HOME/bin"
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
 echo "==> Sync Flutter iOS build configuration"
