@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../l10n/app_localizations.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends StatefulWidget {
   final AppLocalizations loc;
   final VoidCallback onLanguageChanged;
 
@@ -10,6 +11,23 @@ class AboutScreen extends StatelessWidget {
     required this.loc,
     required this.onLanguageChanged,
   });
+
+  @override
+  State<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends State<AboutScreen> {
+  String? _appVersion;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = info.version);
+    });
+  }
+
+  AppLocalizations get loc => widget.loc;
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +135,7 @@ class AboutScreen extends StatelessWidget {
                   loc.language == AppLanguage.zh,
                   () async {
                     await loc.setLanguage(AppLanguage.zh);
-                    onLanguageChanged();
+                    widget.onLanguageChanged();
                   },
                   theme,
                 ),
@@ -129,7 +147,7 @@ class AboutScreen extends StatelessWidget {
                   loc.language == AppLanguage.en,
                   () async {
                     await loc.setLanguage(AppLanguage.en);
-                    onLanguageChanged();
+                    widget.onLanguageChanged();
                   },
                   theme,
                 ),
@@ -199,7 +217,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            '${loc.version}: 1.0.1',
+            '${loc.version}: ${_appVersion ?? '—'}',
             style: TextStyle(fontSize: 14, color: Colors.grey[700]),
           ),
         ],

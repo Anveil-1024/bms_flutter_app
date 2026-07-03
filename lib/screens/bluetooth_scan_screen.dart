@@ -1,11 +1,26 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../l10n/app_localizations.dart';
 import '../services/bms_ble_service.dart';
 import '../models/bms_data.dart';
 
-enum _BtStatus { init, turnOn, ready, scanning, noDevice, selectDevice, connecting, connected, disconnected, scanError, connectError, unavailable }
+enum _BtStatus {
+  init,
+  turnOn,
+  ready,
+  scanning,
+  noDevice,
+  selectDevice,
+  connecting,
+  connected,
+  disconnected,
+  scanError,
+  connectError,
+  unavailable,
+}
 
 /// iOS 扫描时 platformName 常为空，须优先用广播名 advName。
 String _bleDisplayName(ScanResult r) {
@@ -92,8 +107,52 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
     _checkBluetooth();
   }
 
+  static const List<Permission> _androidBlePermissions = [
+    Permission.bluetoothScan,
+    Permission.bluetoothConnect,
+    Permission.locationWhenInUse,
+  ];
+
+  bool _isGranted(PermissionStatus? status) {
+    return status != null && (status.isGranted || status.isLimited);
+  }
+
+  Future<bool> _hasBlePermissions() async {
+    if (!Platform.isAndroid) return true;
+    final statuses = await Future.wait(
+      _androidBlePermissions.map((p) => p.status),
+    );
+    return statuses.every((s) => _isGranted(s));
+  }
+
+  Future<bool> _ensureBlePermissions() async {
+    if (!Platform.isAndroid) return true;
+    if (await _hasBlePermissions()) return true;
+
+    final statusMap = await _androidBlePermissions.request();
+    final granted = _androidBlePermissions.every(
+      (p) => _isGranted(statusMap[p]),
+    );
+
+    if (!granted && mounted) {
+      setState(() {
+        _btStatus = _BtStatus.unavailable;
+        _statusArg = loc.btPermissionRequired;
+      });
+    }
+    return granted;
+  }
+
   Future<void> _checkBluetooth() async {
     try {
+      final hasPermissions = await _hasBlePermissions();
+      if (!hasPermissions) {
+        setState(() {
+          _btStatus = _BtStatus.unavailable;
+          _statusArg = loc.btPermissionRequired;
+        });
+        return;
+      }
       final adapterState = await FlutterBluePlus.adapterState.first;
       if (adapterState != BluetoothAdapterState.on) {
         setState(() => _btStatus = _BtStatus.turnOn);
@@ -111,6 +170,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   void _startScan() async {
     if (_isScanning) return;
     try {
+      final granted = await _ensureBlePermissions();
+      if (!granted) return;
+
       final adapterState = await FlutterBluePlus.adapterState.first;
       if (adapterState != BluetoothAdapterState.on) {
         setState(() => _btStatus = _BtStatus.turnOn);
@@ -138,7 +200,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         _bleService.stopScan();
         setState(() {
           _isScanning = false;
-          _btStatus = _scanResults.isEmpty ? _BtStatus.noDevice : _BtStatus.selectDevice;
+          _btStatus = _scanResults.isEmpty
+              ? _BtStatus.noDevice
+              : _BtStatus.selectDevice;
         });
       }
     } catch (e) {
@@ -155,7 +219,11 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
 
   void _connect(BluetoothDevice device, {String? displayName}) async {
     if (_connectingDeviceId != null || _bleService.isConnected) return;
-    final name = displayName ??
+    final granted = await _ensureBlePermissions();
+    if (!granted) return;
+
+    final name =
+        displayName ??
         (device.platformName.trim().isNotEmpty
             ? device.platformName.trim()
             : device.remoteId.str);
@@ -238,7 +306,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
               foregroundColor: Colors.redAccent,
               side: const BorderSide(color: Colors.redAccent),
               minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
           ),
         ],
@@ -275,9 +345,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: statusColor.withValues(alpha: 0.15),
-        ),
+        border: Border.all(color: statusColor.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
@@ -325,12 +393,17 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   Widget _buildScanButton(ThemeData theme) {
     if (_bleService.isConnected) return const SizedBox.shrink();
     return FilledButton.icon(
-      onPressed: (_isScanning || _connectingDeviceId != null) ? null : _startScan,
+      onPressed: (_isScanning || _connectingDeviceId != null)
+          ? null
+          : _startScan,
       icon: _isScanning
           ? const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             )
           : const Icon(Icons.radar),
       label: Text(_isScanning ? loc.btScanningBtn : loc.btScanBtn),
@@ -374,13 +447,16 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         subtitle: Row(
           children: [
             Text('${loc.btSignal}: $rssi dBm  '),
-            ...List.generate(3, (i) => Icon(
-              Icons.signal_cellular_alt,
-              size: 14,
-              color: i < signalStrength
-                  ? theme.colorScheme.primary
-                  : Colors.grey[300],
-            )),
+            ...List.generate(
+              3,
+              (i) => Icon(
+                Icons.signal_cellular_alt,
+                size: 14,
+                color: i < signalStrength
+                    ? theme.colorScheme.primary
+                    : Colors.grey[300],
+              ),
+            ),
           ],
         ),
         trailing: _connectingDeviceId == device.remoteId.str
@@ -391,7 +467,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
               )
             : IconButton(
                 icon: Icon(Icons.link, color: theme.colorScheme.primary),
-                onPressed: _connectingDeviceId != null ? null : () => _connect(device, displayName: name),
+                onPressed: _connectingDeviceId != null
+                    ? null
+                    : () => _connect(device, displayName: name),
                 tooltip: loc.btConnect,
               ),
       ),

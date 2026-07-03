@@ -24,10 +24,7 @@ class AppLocalizations extends ChangeNotifier {
   Future<void> setLanguage(AppLanguage lang) async {
     _language = lang;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _languageKey,
-      lang == AppLanguage.en ? 'en' : 'zh',
-    );
+    await prefs.setString(_languageKey, lang == AppLanguage.en ? 'en' : 'zh');
     notifyListeners();
   }
 
@@ -46,10 +43,12 @@ class AppLocalizations extends ChangeNotifier {
   // Bluetooth scan
   String get btStatusInit => _t('请开启蓝牙并点击扫描', 'Turn on Bluetooth and tap scan');
   String get btTurnOn => _t('请先打开手机蓝牙', 'Please turn on Bluetooth');
-  String get btReady => _t('点击「扫描」搜索 BMS 设备', 'Tap "Scan" to search BMS devices');
+  String get btReady =>
+      _t('点击「扫描」搜索 BMS 设备', 'Tap "Scan" to search BMS devices');
   String get btScanning => _t('正在扫描…', 'Scanning…');
   String get btNoDevice => _t('未发现设备，可重试', 'No devices found, try again');
-  String get btSelectDevice => _t('请选择要连接的 BMS 设备', 'Select a BMS device to connect');
+  String get btSelectDevice =>
+      _t('请选择要连接的 BMS 设备', 'Select a BMS device to connect');
   String get btConnecting => _t('正在连接…', 'Connecting…');
   String get btConnected => _t('已连接，正在查询数据…', 'Connected, querying data…');
   String get btDisconnected => _t('已断开，可重新扫描', 'Disconnected, scan again');
@@ -60,10 +59,16 @@ class AppLocalizations extends ChangeNotifier {
   String get btConnect => _t('连接', 'Connect');
   String get btDisconnect => _t('断开', 'Disconnect');
   String get btDevice => _t('设备', 'Device');
-  String btConnectingTo(String name) => _t('正在连接 $name…', 'Connecting to $name…');
+  String get btPermissionRequired => _t(
+    '请授予“附近设备/蓝牙/位置信息”权限后重试',
+    'Please grant Nearby devices/Bluetooth/Location permissions and retry',
+  );
+  String btConnectingTo(String name) =>
+      _t('正在连接 $name…', 'Connecting to $name…');
   String btScanError(String e) => _t('扫描异常: $e', 'Scan error: $e');
   String btConnectError(String e) => _t('连接失败: $e', 'Connection failed: $e');
-  String btUnavailable(String e) => _t('蓝牙不可用: $e', 'Bluetooth unavailable: $e');
+  String btUnavailable(String e) =>
+      _t('蓝牙不可用: $e', 'Bluetooth unavailable: $e');
 
   // Battery info - basic
   String get deviceSerial => _t('设备序列号', 'Device Serial');
@@ -215,11 +220,13 @@ class AppLocalizations extends ChangeNotifier {
   String get otaUpdateAvailable => _t('发现新版本', 'Update available');
   String get otaUnsupportedProduct =>
       _t('服务器不支持该设备型号', 'Device model not supported on server');
-  String get otaNoFirmwareOnServer =>
-      _t('服务器暂无可用固件', 'No firmware on server');
-  String get otaNoProductLine =>
-      _t('设备未上报产品线信息，请升级设备固件或联系技术支持', 'Device did not report product line; update device firmware or contact support');
-  String get otaNeedConnect => _t('请先连接 BMS 设备', 'Connect to a BMS device first');
+  String get otaNoFirmwareOnServer => _t('服务器暂无可用固件', 'No firmware on server');
+  String get otaNoProductLine => _t(
+    '设备未上报产品线信息，请升级设备固件或联系技术支持',
+    'Device did not report product line; update device firmware or contact support',
+  );
+  String get otaNeedConnect =>
+      _t('请先连接 BMS 设备', 'Connect to a BMS device first');
   String get otaCurrentVersion => _t('当前版本', 'Current version');
   String get otaLatestVersion => _t('最新版本', 'Latest version');
   String get otaProductName => _t('产品', 'Product');
