@@ -5,6 +5,12 @@ PODS:
   - flutter_blue_plus_darwin (0.0.2):
     - Flutter
     - FlutterMacOS
+  - flutter_native_splash (2.4.3):
+    - Flutter
+  - package_info_plus (0.4.5):
+    - Flutter
+  - permission_handler_apple (9.4.8):
+    - Flutter
   - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -13,6 +19,9 @@ DEPENDENCIES:
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
   - flutter_blue_plus_darwin (from `.symlinks/plugins/flutter_blue_plus_darwin/darwin`)
+  - flutter_native_splash (from `.symlinks/plugins/flutter_native_splash/ios`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
 
 EXTERNAL SOURCES:
@@ -22,6 +31,12 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_blue_plus_darwin:
     :path: ".symlinks/plugins/flutter_blue_plus_darwin/darwin"
+  flutter_native_splash:
+    :path: ".symlinks/plugins/flutter_native_splash/ios"
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
   shared_preferences_foundation:
     :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
 
@@ -29,6 +44,9 @@ SPEC CHECKSUMS:
   file_picker: 8fc6fe5e42585a217d44d22f79ec046cb8d81140
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_blue_plus_darwin: 20a08bfeaa0f7804d524858d3d8744bcc1b6dbc3
+  flutter_native_splash: c32d145d68aeda5502d5f543ee38c192065986cf
+  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
+  permission_handler_apple: 92d754bbaa7361d436db2d6c3c1c2a0fdcec462e
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
 
 PODFILE CHECKSUM: 0468d31ff154dc6f902f1ffa417b249caad96d8c
