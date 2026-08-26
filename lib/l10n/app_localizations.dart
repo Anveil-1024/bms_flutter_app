@@ -41,19 +41,31 @@ class AppLocalizations extends ChangeNotifier {
   String get navMaintenance => _t('维护', 'Maintenance');
 
   // Bluetooth scan
-  String get btStatusInit => _t('请开启蓝牙并点击扫描', 'Turn on Bluetooth and tap scan');
+  String get btStatusInit =>
+      _t('请开启蓝牙并扫描设备二维码', 'Turn on Bluetooth and scan the device QR code');
   String get btTurnOn => _t('请先打开手机蓝牙', 'Please turn on Bluetooth');
   String get btReady =>
-      _t('点击「扫描」搜索 BMS 设备', 'Tap "Scan" to search BMS devices');
+      _t('扫描设备标签二维码以连接', 'Scan the QR code on the device label to connect');
   String get btScanning => _t('正在扫描…', 'Scanning…');
   String get btNoDevice => _t('未发现设备，可重试', 'No devices found, try again');
   String get btSelectDevice =>
       _t('请选择要连接的 BMS 设备', 'Select a BMS device to connect');
   String get btConnecting => _t('正在连接…', 'Connecting…');
   String get btConnected => _t('已连接，正在查询数据…', 'Connected, querying data…');
-  String get btDisconnected => _t('已断开，可重新扫描', 'Disconnected, scan again');
+  String get btDisconnected =>
+      _t('已断开，可重新扫码连接', 'Disconnected, scan QR again to connect');
   String get btScanBtn => _t('扫描 BMS 设备', 'Scan BMS Devices');
   String get btScanningBtn => _t('扫描中…', 'Scanning…');
+  String get btQrScanBtn => _t('扫码连接', 'Scan QR to connect');
+  String get btManualScan => _t('手动搜索附近设备', 'Search nearby devices');
+  String get btQrHint =>
+      _t('对准设备标签上的二维码', 'Align the QR code on the device label');
+  String get btQrInvalid =>
+      _t('无效二维码，请扫描设备标签', 'Invalid QR code. Scan the device label');
+  String get btCameraPermissionRequired => _t(
+    '请授予相机权限后重试。若已拒绝，请在系统设置中开启',
+    'Grant camera permission and retry. If denied, enable it in system settings',
+  );
   String get btDeviceList => _t('扫描到的设备', 'Discovered Devices');
   String get btSignal => _t('信号', 'Signal');
   String get btConnect => _t('连接', 'Connect');
@@ -65,6 +77,9 @@ class AppLocalizations extends ChangeNotifier {
   );
   String btConnectingTo(String name) =>
       _t('正在连接 $name…', 'Connecting to $name…');
+  String btLookingFor(String name) => _t('正在查找 $name…', 'Looking for $name…');
+  String btQrNotFound(String name) =>
+      _t('未找到 $name，请靠近设备后重试', '$name not found. Move closer and retry');
   String btScanError(String e) => _t('扫描异常: $e', 'Scan error: $e');
   String btConnectError(String e) => _t('连接失败: $e', 'Connection failed: $e');
   String btUnavailable(String e) =>

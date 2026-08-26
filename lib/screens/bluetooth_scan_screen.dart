@@ -6,13 +6,16 @@ import 'package:permission_handler/permission_handler.dart';
 import '../l10n/app_localizations.dart';
 import '../services/bms_ble_service.dart';
 import '../models/bms_data.dart';
+import 'qr_scan_screen.dart';
 
 enum _BtStatus {
   init,
   turnOn,
   ready,
   scanning,
+  lookingForDevice,
   noDevice,
+  qrNotFound,
   selectDevice,
   connecting,
   connected,
@@ -20,6 +23,7 @@ enum _BtStatus {
   scanError,
   connectError,
   unavailable,
+  cameraDenied,
 }
 
 /// iOS 扫描时 platformName 常为空，须优先用广播名 advName。
@@ -33,6 +37,10 @@ String _bleDisplayName(ScanResult r) {
 
 bool _isGrtDevice(ScanResult r) {
   return _bleDisplayName(r).toUpperCase().startsWith('GRT');
+}
+
+bool _sameBleName(String a, String b) {
+  return a.trim().toUpperCase() == b.trim().toUpperCase();
 }
 
 List<ScanResult> _dedupeScanResults(List<ScanResult> results) {
@@ -60,6 +68,8 @@ class BluetoothScanScreen extends StatefulWidget {
 }
 
 class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
+  static const _scanTimeout = Duration(seconds: 12);
+
   List<ScanResult> _scanResults = [];
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BmsData>? _dataSub;
@@ -68,9 +78,13 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   String _statusArg = '';
   bool _isScanning = false;
   String? _connectingDeviceId;
+  String? _lookupName;
+  int _scanGen = 0;
 
   BmsBleService get _bleService => widget.bleService;
   AppLocalizations get loc => widget.loc;
+
+  bool get _busy => _isScanning || _connectingDeviceId != null;
 
   String get _statusText {
     switch (_btStatus) {
@@ -82,8 +96,12 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         return loc.btReady;
       case _BtStatus.scanning:
         return loc.btScanning;
+      case _BtStatus.lookingForDevice:
+        return loc.btLookingFor(_statusArg);
       case _BtStatus.noDevice:
         return loc.btNoDevice;
+      case _BtStatus.qrNotFound:
+        return loc.btQrNotFound(_statusArg);
       case _BtStatus.selectDevice:
         return loc.btSelectDevice;
       case _BtStatus.connecting:
@@ -98,6 +116,8 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         return loc.btConnectError(_statusArg);
       case _BtStatus.unavailable:
         return loc.btUnavailable(_statusArg);
+      case _BtStatus.cameraDenied:
+        return loc.btCameraPermissionRequired;
     }
   }
 
@@ -143,6 +163,31 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
     return granted;
   }
 
+  Future<bool> _ensureCameraPermission() async {
+    final status = await Permission.camera.status;
+    if (_isGranted(status)) return true;
+    final requested = await Permission.camera.request();
+    if (_isGranted(requested)) return true;
+    if (mounted) {
+      setState(() {
+        _btStatus = _BtStatus.cameraDenied;
+      });
+    }
+    return false;
+  }
+
+  Future<bool> _prepareBle() async {
+    final granted = await _ensureBlePermissions();
+    if (!granted) return false;
+
+    final adapterState = await FlutterBluePlus.adapterState.first;
+    if (adapterState != BluetoothAdapterState.on) {
+      if (mounted) setState(() => _btStatus = _BtStatus.turnOn);
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _checkBluetooth() async {
     try {
       final hasPermissions = await _hasBlePermissions();
@@ -167,26 +212,112 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
     }
   }
 
-  void _startScan() async {
-    if (_isScanning) return;
-    try {
-      final granted = await _ensureBlePermissions();
-      if (!granted) return;
+  void _cancelScanListeners() {
+    _scanSub?.cancel();
+    _scanSub = null;
+    _bleService.stopScan();
+  }
 
-      final adapterState = await FlutterBluePlus.adapterState.first;
-      if (adapterState != BluetoothAdapterState.on) {
-        setState(() => _btStatus = _BtStatus.turnOn);
-        return;
-      }
+  Future<void> _openQrScan() async {
+    if (_busy || _bleService.isConnected) return;
+    if (!await _prepareBle()) return;
+    if (!await _ensureCameraPermission()) return;
+    if (!mounted) return;
+
+    final name = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => QrScanScreen(loc: loc)));
+    if (!mounted || name == null || name.isEmpty) return;
+    await _findAndConnectByName(name);
+  }
+
+  Future<void> _findAndConnectByName(String targetName) async {
+    if (_busy) return;
+    final gen = ++_scanGen;
+    try {
+      if (!await _prepareBle()) return;
+
       setState(() {
         _isScanning = true;
+        _lookupName = targetName;
+        _scanResults = [];
+        _btStatus = _BtStatus.lookingForDevice;
+        _statusArg = targetName;
+      });
+
+      _cancelScanListeners();
+      await _bleService.startScan(timeout: _scanTimeout);
+      _scanSub = _bleService.scanResults.listen((results) {
+        if (!mounted || gen != _scanGen) return;
+        if (_connectingDeviceId != null || _bleService.isConnected) return;
+
+        final matches = _dedupeScanResults(
+          results
+              .where((r) => _sameBleName(_bleDisplayName(r), targetName))
+              .toList(),
+        );
+        if (matches.isEmpty) return;
+
+        if (matches.length == 1) {
+          _cancelScanListeners();
+          setState(() => _scanResults = matches);
+          _connect(
+            matches.first.device,
+            displayName: _bleDisplayName(matches.first),
+          );
+          return;
+        }
+
+        _cancelScanListeners();
+        setState(() {
+          _isScanning = false;
+          _scanResults = matches;
+          _btStatus = _BtStatus.selectDevice;
+        });
+      });
+
+      await Future.delayed(_scanTimeout);
+      if (!mounted || gen != _scanGen) return;
+      if (_connectingDeviceId != null || _bleService.isConnected) return;
+
+      _cancelScanListeners();
+      setState(() {
+        _isScanning = false;
+        if (_scanResults.length > 1) {
+          _btStatus = _BtStatus.selectDevice;
+        } else {
+          _btStatus = _BtStatus.qrNotFound;
+          _statusArg = targetName;
+        }
+      });
+    } catch (e) {
+      if (mounted && gen == _scanGen) {
+        _cancelScanListeners();
+        setState(() {
+          _isScanning = false;
+          _btStatus = _BtStatus.scanError;
+          _statusArg = '$e';
+        });
+      }
+    }
+  }
+
+  void _startScan() async {
+    if (_busy) return;
+    final gen = ++_scanGen;
+    try {
+      if (!await _prepareBle()) return;
+
+      setState(() {
+        _isScanning = true;
+        _lookupName = null;
         _scanResults = [];
         _btStatus = _BtStatus.scanning;
       });
-      await _bleService.startScan(timeout: const Duration(seconds: 12));
-      _scanSub?.cancel();
+      _cancelScanListeners();
+      await _bleService.startScan(timeout: _scanTimeout);
       _scanSub = _bleService.scanResults.listen((results) {
-        if (mounted) {
+        if (mounted && gen == _scanGen) {
           setState(() {
             _scanResults = _dedupeScanResults(
               results.where(_isGrtDevice).toList(),
@@ -194,10 +325,9 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
           });
         }
       });
-      await Future.delayed(const Duration(seconds: 12));
-      if (mounted) {
-        _scanSub?.cancel();
-        _bleService.stopScan();
+      await Future.delayed(_scanTimeout);
+      if (mounted && gen == _scanGen) {
+        _cancelScanListeners();
         setState(() {
           _isScanning = false;
           _btStatus = _scanResults.isEmpty
@@ -206,8 +336,8 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        _bleService.stopScan();
+      if (mounted && gen == _scanGen) {
+        _cancelScanListeners();
         setState(() {
           _isScanning = false;
           _btStatus = _BtStatus.scanError;
@@ -219,21 +349,27 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
 
   void _connect(BluetoothDevice device, {String? displayName}) async {
     if (_connectingDeviceId != null || _bleService.isConnected) return;
+    _connectingDeviceId = device.remoteId.str;
+    _scanGen++;
+
     final granted = await _ensureBlePermissions();
-    if (!granted) return;
+    if (!granted) {
+      if (mounted) setState(() => _connectingDeviceId = null);
+      return;
+    }
 
     final name =
         displayName ??
         (device.platformName.trim().isNotEmpty
             ? device.platformName.trim()
             : device.remoteId.str);
+    if (!mounted) return;
     setState(() {
-      _connectingDeviceId = device.remoteId.str;
+      _isScanning = false;
       _btStatus = _BtStatus.connecting;
       _statusArg = name;
     });
-    _scanSub?.cancel();
-    _bleService.stopScan();
+    _cancelScanListeners();
     try {
       await _bleService.connect(device);
       _dataSub?.cancel();
@@ -253,7 +389,8 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
       if (mounted) {
         setState(() {
           _connectingDeviceId = null;
-          _isScanning = false;
+          _lookupName = null;
+          _scanResults = [];
           _btStatus = _BtStatus.connected;
         });
       }
@@ -295,9 +432,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
       children: [
         _buildStatusCard(theme),
         const SizedBox(height: 16),
-        _buildScanButton(theme),
-        if (_bleService.isConnected) ...[
-          const SizedBox(height: 12),
+        if (_bleService.isConnected)
           OutlinedButton.icon(
             onPressed: _disconnect,
             icon: const Icon(Icons.link_off),
@@ -310,7 +445,11 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-          ),
+          )
+        else ...[
+          _buildQrButton(),
+          const SizedBox(height: 4),
+          _buildManualScanButton(),
         ],
         if (_scanResults.isNotEmpty && !_bleService.isConnected) ...[
           const SizedBox(height: 20),
@@ -332,6 +471,12 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
   Widget _buildStatusCard(ThemeData theme) {
     final isConnected = _bleService.isConnected;
     final statusColor = isConnected ? Colors.green : theme.colorScheme.primary;
+    final statusIcon = isConnected
+        ? Icons.bluetooth_connected
+        : (_btStatus == _BtStatus.lookingForDevice ||
+              _btStatus == _BtStatus.scanning)
+        ? Icons.bluetooth_searching
+        : Icons.bluetooth;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -355,11 +500,7 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
               color: statusColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              isConnected ? Icons.bluetooth_connected : Icons.bluetooth,
-              color: statusColor,
-              size: 28,
-            ),
+            child: Icon(statusIcon, color: statusColor, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -390,13 +531,16 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
     );
   }
 
-  Widget _buildScanButton(ThemeData theme) {
-    if (_bleService.isConnected) return const SizedBox.shrink();
+  Widget _buildQrButton() {
+    final lookingByQr = _lookupName != null && _isScanning;
+    final label = _connectingDeviceId != null
+        ? loc.btConnectingTo(_statusArg)
+        : lookingByQr
+        ? loc.btLookingFor(_lookupName!)
+        : loc.btQrScanBtn;
     return FilledButton.icon(
-      onPressed: (_isScanning || _connectingDeviceId != null)
-          ? null
-          : _startScan,
-      icon: _isScanning
+      onPressed: _busy ? null : _openQrScan,
+      icon: _busy
           ? const SizedBox(
               width: 20,
               height: 20,
@@ -405,11 +549,22 @@ class _BluetoothScanScreenState extends State<BluetoothScanScreen> {
                 color: Colors.white,
               ),
             )
-          : const Icon(Icons.radar),
-      label: Text(_isScanning ? loc.btScanningBtn : loc.btScanBtn),
+          : const Icon(Icons.qr_code_scanner),
+      label: Text(label),
       style: FilledButton.styleFrom(
         minimumSize: const Size(double.infinity, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+
+  Widget _buildManualScanButton() {
+    return TextButton(
+      onPressed: _busy ? null : _startScan,
+      child: Text(
+        _isScanning && _lookupName == null
+            ? loc.btScanningBtn
+            : loc.btManualScan,
       ),
     );
   }
