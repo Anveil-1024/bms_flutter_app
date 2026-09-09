@@ -2,6 +2,8 @@ import '../l10n/history_event_labels.dart';
 
 /// 单条历史记录（与固件约定：16 字节定长，见 BmsProtocol）
 ///
+/// V1.3.0：unixTime 由校时（0x1008）后的 Unix 秒写入；未校时为 0。
+///
 /// 布局（新固件 `ble_pack_history_row`）：unix 4B LE | 总压 u16 LE | 电流 s16 LE |
 /// SOC 1B | 事件类型 u16 LE @9~10 | 保留 5B
 ///
@@ -69,6 +71,22 @@ class HistoryRecord {
         ((data[offset + 2] & 0xFF) << 16) |
         ((data[offset + 3] & 0xFF) << 24);
   }
+
+  bool get hasTimestamp => unixTime > 0;
+
+  /// 本地时间 `yyyy-MM-dd HH:mm:ss`；未校时（unixTime=0）返回空串
+  String get formattedLocalTime {
+    if (!hasTimestamp) return '';
+    return formatUnixTimeLocal(unixTime);
+  }
+}
+
+/// Unix 秒格式化为本地时间 `yyyy-MM-dd HH:mm:ss`
+String formatUnixTimeLocal(int unixSeconds) {
+  final dt = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000);
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
+      '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
 }
 
 /// OTA 流程异常（固件返回非 0 状态等）
@@ -80,4 +98,13 @@ class OtaException implements Exception {
 
   @override
   String toString() => 'OtaException: $message${statusCode != null ? ' ($statusCode)' : ''}';
+}
+
+/// 校时失败（参数被 BMS 拒绝或空应答）
+class TimeSyncException implements Exception {
+  final String message;
+  TimeSyncException(this.message);
+
+  @override
+  String toString() => 'TimeSyncException: $message';
 }

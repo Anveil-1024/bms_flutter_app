@@ -8,6 +8,7 @@ import 'screens/battery_info_screen.dart';
 import 'screens/battery_detail_screen.dart';
 import 'screens/about_screen.dart';
 import 'screens/maintenance_screen.dart';
+import 'widgets/app_update_prompt.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,6 +127,15 @@ class _HomeScreenState extends State<HomeScreen> {
   BmsData _bmsData = const BmsData();
 
   AppLocalizations get loc => widget.loc;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      AppUpdatePrompt.checkAndPrompt(context: context, loc: loc);
+    });
+  }
 
   void _onDataUpdate(BmsData data) {
     if (mounted) setState(() => _bmsData = data);

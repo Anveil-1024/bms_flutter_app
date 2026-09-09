@@ -19,6 +19,14 @@ class BmsProtocol {
   static const int cmdOtaBegin = 0x1005;
   static const int cmdOtaData = 0x1006;
   static const int cmdOtaEnd = 0x1007;
+  /// 设置 Unix 时间（校时）：主机 4B 小端秒；成功回显 4B，拒绝时空数据块
+  static const int cmdSetUnixTime = 0x1008;
+
+  /// 校时合法下限：2024-01-01 00:00:00 UTC
+  static const int unixTimeMin = 1704067200;
+
+  /// 校时合法上限（不含）：2100-01-01 00:00:00 UTC
+  static const int unixTimeMaxExclusive = 4102444800;
 
   /// 与固件 `BLE_TX_BUF_MAX - BLE_FRAME_OVERHEAD` 一致，防止误同步后长时间等满缓冲区
   static const int maxFramePayloadLength = 631;
@@ -87,6 +95,21 @@ class BmsProtocol {
 
   static Uint8List buildOtaEnd({bool confirm = true}) {
     return buildFrame(cmdOtaEnd, confirm ? [0x01] : []);
+  }
+
+  static bool isValidUnixTime(int unixSeconds) {
+    return unixSeconds >= unixTimeMin && unixSeconds < unixTimeMaxExclusive;
+  }
+
+  /// unixTime 为 Unix 秒，小端 4 字节；合法范围 2024-01-01～2100-01-01（不含）
+  static Uint8List buildSetUnixTime(int unixSeconds) {
+    return buildFrame(cmdSetUnixTime, _uint32Le(unixSeconds));
+  }
+
+  /// 成功回显 4 字节 Unix 小端；空数据块表示参数被拒绝
+  static int? parseSetUnixTimePayload(List<int> payload) {
+    if (payload.length < 4) return null;
+    return _readUint32LE(payload, 0);
   }
 
   static List<int> _uint32Le(int v) => [
@@ -335,6 +358,9 @@ class BmsBleService {
 
   int _periodicPauseRef = 0;
 
+  int? _lastSyncedUnixTime;
+  int? get lastSyncedUnixTime => _lastSyncedUnixTime;
+
   BluetoothDevice? get device => _device;
   bool get isConnected => _device?.isConnected ?? false;
 
@@ -390,6 +416,8 @@ class BmsBleService {
     }
 
     await Future.delayed(const Duration(milliseconds: 300));
+    // V1.3.0：连接后先校时，再读电池信息/历史；旧固件不支持 0x1008 时忽略失败
+    await _syncUnixTimeBestEffort();
     await sendQueryBatteryInfo();
     _startPeriodicQueryIfIdle();
   }
@@ -437,7 +465,8 @@ class BmsBleService {
       if (enableOtaDebugLog &&
           (funcCode == BmsProtocol.cmdOtaBegin ||
               funcCode == BmsProtocol.cmdOtaData ||
-              funcCode == BmsProtocol.cmdOtaEnd)) {
+              funcCode == BmsProtocol.cmdOtaEnd ||
+              funcCode == BmsProtocol.cmdSetUnixTime)) {
         print(
           '[BLE][RX-FRAME] func=0x${funcCode.toRadixString(16).padLeft(4, '0')} '
           'len=$totalLen ${_hex(frame)}',
@@ -506,6 +535,44 @@ class BmsBleService {
     );
     if (payload.isEmpty) return null;
     return (payload[0] & 0xFF).clamp(0, 100);
+  }
+
+  /// 将手机当前（或指定）Unix 秒写入 BMS（0x1008）。
+  /// 成功返回从机回显的 Unix 秒；参数非法或从机拒绝时抛出 [TimeSyncException]。
+  Future<int> setUnixTime({
+    int? unixSeconds,
+    Duration timeout = const Duration(seconds: 5),
+    bool managePeriodic = true,
+  }) async {
+    final t = unixSeconds ??
+        DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+    if (!BmsProtocol.isValidUnixTime(t)) {
+      throw TimeSyncException('Unix time out of range (2024-01-01 ~ 2100-01-01)');
+    }
+    final payload = await _sendCommandAndWait(
+      BmsProtocol.cmdSetUnixTime,
+      BmsProtocol.buildSetUnixTime(t),
+      timeout: timeout,
+      managePeriodic: managePeriodic,
+    );
+    final echoed = BmsProtocol.parseSetUnixTimePayload(payload);
+    if (echoed == null) {
+      throw TimeSyncException('BMS rejected unix time (empty ack)');
+    }
+    _lastSyncedUnixTime = echoed;
+    return echoed;
+  }
+
+  /// 连接后尽力校时；超时或旧固件不支持时返回 null，不中断连接流程
+  Future<int?> _syncUnixTimeBestEffort() async {
+    try {
+      return await setUnixTime(
+        timeout: const Duration(seconds: 3),
+        managePeriodic: false,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 分页读取历史记录；[count] 将被限制在 1~32
@@ -662,7 +729,8 @@ class BmsBleService {
       if (enableOtaDebugLog &&
           (expectedFuncCode == BmsProtocol.cmdOtaBegin ||
               expectedFuncCode == BmsProtocol.cmdOtaData ||
-              expectedFuncCode == BmsProtocol.cmdOtaEnd)) {
+              expectedFuncCode == BmsProtocol.cmdOtaEnd ||
+              expectedFuncCode == BmsProtocol.cmdSetUnixTime)) {
         print(
           '[BLE][TX] expect=0x${expectedFuncCode.toRadixString(16).padLeft(4, '0')} '
           'len=${frame.length} ${_hex(frame)}',
@@ -722,6 +790,7 @@ class BmsBleService {
 
   Future<void> disconnect() async {
     _failPendingCommand(StateError('Disconnected'));
+    _lastSyncedUnixTime = null;
     _periodicPauseRef = 0;
     _queryTimer?.cancel();
     _queryTimer = null;

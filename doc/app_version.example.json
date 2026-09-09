@@ -1,0 +1,9 @@
+{
+  "latest_version": "1.0.3",
+  "min_supported_version": "1.0.2",
+  "force": false,
+  "release_notes_zh": "新增 App 升级检测，避免继续使用过旧版本。",
+  "release_notes_en": "Add in-app update check so outdated builds are not kept in use.",
+  "android_download_url": "https://example.com/grb-link/",
+  "ios_store_url": "https://apps.apple.com/app/idXXXXXXXX"
+}
