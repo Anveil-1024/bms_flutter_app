@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../models/history_record.dart';
 import '../services/bms_ble_service.dart';
 import 'history_screen.dart';
 import 'ota_screen.dart';
@@ -21,8 +22,25 @@ class MaintenanceScreen extends StatefulWidget {
 class _MaintenanceScreenState extends State<MaintenanceScreen> {
   int? _soh;
   bool _sohLoading = false;
+  bool _syncingTime = false;
+  String? _syncError;
 
   AppLocalizations get loc => widget.loc;
+
+  Future<void> _syncTime() async {
+    if (!widget.bleService.isConnected) return;
+    setState(() {
+      _syncingTime = true;
+      _syncError = null;
+    });
+    try {
+      await widget.bleService.setUnixTime();
+    } catch (_) {
+      if (mounted) setState(() => _syncError = loc.syncTimeFailed);
+    } finally {
+      if (mounted) setState(() => _syncingTime = false);
+    }
+  }
 
   Future<void> _readSoh() async {
     if (!widget.bleService.isConnected) return;
@@ -35,6 +53,13 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
     } finally {
       if (mounted) setState(() => _sohLoading = false);
     }
+  }
+
+  String _syncStatusText() {
+    if (_syncError != null) return _syncError!;
+    final synced = widget.bleService.lastSyncedUnixTime;
+    if (synced != null) return loc.syncTimeAt(formatUnixTimeLocal(synced));
+    return loc.syncTimeNotYet;
   }
 
   @override
@@ -96,6 +121,59 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                   onPressed: _sohLoading ? null : _readSoh,
                   icon: const Icon(Icons.refresh),
                   label: Text(loc.sohRefresh),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.schedule, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      loc.syncTimeTitle,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  loc.syncTimeHint,
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _syncStatusText(),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: _syncError != null
+                        ? Colors.red
+                        : (widget.bleService.lastSyncedUnixTime != null
+                            ? Colors.green[700]
+                            : Colors.grey[700]),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _syncingTime ? null : _syncTime,
+                  icon: _syncingTime
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sync),
+                  label: Text(loc.syncTimeButton),
                 ),
               ],
             ),

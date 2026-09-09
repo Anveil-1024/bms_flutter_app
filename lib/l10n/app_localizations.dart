@@ -205,6 +205,21 @@ class AppLocalizations extends ChangeNotifier {
   String get english => _t('英文', 'English');
   String get logoPlaceholder => _t('Logo 展示区域', 'Logo Display Area');
   String get version => _t('版本', 'Version');
+  String get appUpdateCheck => _t('检查更新', 'Check for updates');
+  String get appUpdateChecking => _t('正在检查…', 'Checking…');
+  String get appUpdateAvailableTitle => _t('发现新版本', 'Update available');
+  String get appUpdateRequiredTitle => _t('必须升级', 'Update required');
+  String get appUpdateNow => _t('立即升级', 'Update now');
+  String get appUpdateLater => _t('稍后', 'Later');
+  String get appUpdateUpToDate => _t('已是最新版本', 'Already up to date');
+  String get appUpdateUnavailable =>
+      _t('服务器暂无版本信息', 'No version info on server');
+  String get appUpdateOpenFailed => _t(
+        '无法打开下载页或 App Store，请稍后重试',
+        'Could not open the download page or App Store. Try again later',
+      );
+  String appUpdateCheckFailed(String e) =>
+      _t('检查更新失败：$e', 'Update check failed: $e');
 
   // Maintenance / SOH / History / OTA
   String get maintenanceTitle => _t('维护', 'Maintenance');
@@ -221,6 +236,22 @@ class AppLocalizations extends ChangeNotifier {
   String get historyCurrent => _t('电流', 'Current');
   String get historySoc => _t('SOC', 'SOC');
   String get historyFailed => _t('读取失败', 'Read failed');
+  String get historyTime => _t('时间', 'Time');
+  String get historyTimeUnsynced => _t('未校时', 'Not synced');
+  String get historyTimeUnsyncedHint => _t(
+        '记录时间为空表示采集时尚未校时。连接后会自动同步手机时间，之后的新记录才会带时间戳。',
+        'Empty timestamps mean the record was saved before time sync. Time is synced on connect; later records will include timestamps.',
+      );
+  String get syncTimeTitle => _t('设备校时', 'Time sync');
+  String get syncTimeButton => _t('同步时间', 'Sync time');
+  String get syncTimeHint => _t(
+        '将手机当前时间写入 BMS。连接后会自动校时；历史记录的时间戳依赖此次同步。',
+        'Write the phone’s current time to the BMS. Time is synced on connect; history timestamps depend on it.',
+      );
+  String get syncTimeSuccess => _t('校时成功', 'Time synced');
+  String get syncTimeFailed => _t('校时失败，设备可能不支持该功能', 'Time sync failed; the device may not support it');
+  String get syncTimeNotYet => _t('尚未同步', 'Not synced yet');
+  String syncTimeAt(String time) => _t('已同步：$time', 'Synced: $time');
   String get otaTitle => _t('OTA 升级', 'OTA Update');
   String get otaCheckUpdate => _t('检查更新', 'Check for updates');
   String get otaChecking => _t('正在检查…', 'Checking…');

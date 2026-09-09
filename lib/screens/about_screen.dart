@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/app_update_prompt.dart';
 
 class AboutScreen extends StatefulWidget {
   final AppLocalizations loc;
@@ -18,6 +19,7 @@ class AboutScreen extends StatefulWidget {
 
 class _AboutScreenState extends State<AboutScreen> {
   String? _appVersion;
+  bool _checkingUpdate = false;
 
   @override
   void initState() {
@@ -25,6 +27,20 @@ class _AboutScreenState extends State<AboutScreen> {
     PackageInfo.fromPlatform().then((info) {
       if (mounted) setState(() => _appVersion = info.version);
     });
+  }
+
+  Future<void> _checkAppUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    try {
+      await AppUpdatePrompt.checkAndPrompt(
+        context: context,
+        loc: loc,
+        manual: true,
+      );
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
+    }
   }
 
   AppLocalizations get loc => widget.loc;
@@ -216,9 +232,17 @@ class _AboutScreenState extends State<AboutScreen> {
             child: Icon(Icons.info_outline, color: theme.colorScheme.primary, size: 20),
           ),
           const SizedBox(width: 12),
-          Text(
-            '${loc.version}: ${_appVersion ?? '—'}',
-            style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+          Expanded(
+            child: Text(
+              '${loc.version}: ${_appVersion ?? '—'}',
+              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+            ),
+          ),
+          TextButton(
+            onPressed: _checkingUpdate ? null : _checkAppUpdate,
+            child: Text(
+              _checkingUpdate ? loc.appUpdateChecking : loc.appUpdateCheck,
+            ),
           ),
         ],
       ),

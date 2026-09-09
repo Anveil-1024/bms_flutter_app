@@ -92,6 +92,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ],
             ),
+          if (_items.isNotEmpty && _items.every((r) => !r.hasTimestamp))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                loc.historyTimeUnsyncedHint,
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              ),
+            ),
           Expanded(
             child: _items.isEmpty && !_loading
                 ? Center(child: Text(loc.historyEmpty))
@@ -113,6 +121,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         );
                       }
                       final r = _items[index];
+                      final timeText = r.hasTimestamp
+                          ? r.formattedLocalTime
+                          : loc.historyTimeUnsynced;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: Padding(
@@ -121,10 +132,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '${loc.historyEventType}: ${historyEventDisplayName(r.eventType, chinese: loc.language == AppLanguage.zh)}',
+                                '${loc.historyTime}: $timeText',
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
+                                  color: r.hasTimestamp
+                                      ? null
+                                      : Colors.grey[600],
                                 ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${loc.historyEventType}: ${historyEventDisplayName(r.eventType, chinese: loc.language == AppLanguage.zh)}',
+                                style: theme.textTheme.bodyMedium,
                               ),
                               const SizedBox(height: 8),
                               Row(
