@@ -510,8 +510,15 @@ class BmsBleService {
 
   Future<void> sendQueryBatteryInfo() async {
     if (_writeChar == null || !isConnected) return;
-    final frame = BmsProtocol.buildQueryBatteryInfo();
-    await _writeChar!.write(frame.toList(), withoutResponse: false);
+    await _writeFrame(BmsProtocol.buildQueryBatteryInfo());
+  }
+
+  /// KT6368A 的 FFF2 只有 WRITE_WITHOUT_RESPONSE，带应答写会在发出前被拒绝。
+  /// 优先写不应答；特征没有该属性时退回带应答写，兼容旧板 BT3431。
+  Future<void> _writeFrame(List<int> frame) {
+    final props = _writeChar!.properties;
+    final withoutResponse = props.writeWithoutResponse || !props.write;
+    return _writeChar!.write(frame, withoutResponse: withoutResponse);
   }
 
   /// 主动查询电池信息并等待应答（含产品线/固件版本扩展字段）
@@ -736,7 +743,7 @@ class BmsBleService {
           'len=${frame.length} ${_hex(frame)}',
         );
       }
-      await _writeChar!.write(frame.toList(), withoutResponse: false);
+      await _writeFrame(frame);
       return await completer.future.timeout(timeout);
     } on TimeoutException catch (e) {
       if (enableOtaDebugLog) {
