@@ -103,4 +103,61 @@ void main() {
       expect(service.shouldPrompt(result, skippedVersion: '1.0.3'), isTrue);
     });
   });
+
+  group('actionUrl', () {
+    test('iOS uses PGYER install link when build key is set', () {
+      const info = AppUpdateInfo(
+        latestVersion: '1.0.3',
+        minSupportedVersion: '1.0.2',
+        force: false,
+        iosStoreUrl: 'https://apps.apple.com/app/idXXXXXXXX',
+        iosBuildKey: 'abc123',
+      );
+      final url = info.actionUrl(isIOS: true)!;
+      expect(url, startsWith('itms-services://?action=download-manifest&url='));
+      expect(
+        Uri.parse(url).queryParameters['url'],
+        'https://www.pgyer.com/app/plist/abc123',
+      );
+    });
+
+    test('iOS appends install password for password installs', () {
+      const info = AppUpdateInfo(
+        latestVersion: '1.0.3',
+        minSupportedVersion: '1.0.2',
+        force: false,
+        iosBuildKey: 'abc123',
+        installPassword: 'p@ss word',
+      );
+      final url = info.actionUrl(isIOS: true)!;
+      expect(
+        Uri.parse(url).queryParameters['url'],
+        'https://www.pgyer.com/app/plist/abc123?password=p%40ss+word',
+      );
+    });
+
+    test('iOS falls back to App Store without build key', () {
+      const info = AppUpdateInfo(
+        latestVersion: '1.0.3',
+        minSupportedVersion: '1.0.2',
+        force: false,
+        iosStoreUrl: 'https://apps.apple.com/app/idXXXXXXXX',
+      );
+      expect(
+        info.actionUrl(isIOS: true),
+        'https://apps.apple.com/app/idXXXXXXXX',
+      );
+    });
+
+    test('Android uses download page and ignores iOS build key', () {
+      const info = AppUpdateInfo(
+        latestVersion: '1.0.3',
+        minSupportedVersion: '1.0.2',
+        force: false,
+        androidDownloadUrl: 'https://www.pgyer.com/abcd',
+        iosBuildKey: 'abc123',
+      );
+      expect(info.actionUrl(isIOS: false), 'https://www.pgyer.com/abcd');
+    });
+  });
 }
