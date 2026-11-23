@@ -56,6 +56,14 @@ class _AboutScreenState extends State<AboutScreen> {
         _buildLanguageSection(theme),
         const SizedBox(height: 24),
         _buildVersionSection(theme),
+        const SizedBox(height: 12),
+        Center(
+          child: Text(
+            loc.icpInfo,
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            textAlign: TextAlign.center,
+          ),
+        ),
       ],
     );
   }
