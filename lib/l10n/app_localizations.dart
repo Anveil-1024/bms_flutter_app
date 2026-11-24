@@ -205,6 +205,10 @@ class AppLocalizations extends ChangeNotifier {
   String get english => _t('英文', 'English');
   String get logoPlaceholder => _t('Logo 展示区域', 'Logo Display Area');
   String get version => _t('版本', 'Version');
+  String get icpInfo => _t(
+        'ICP 备案号：沪ICP备2026033910号-2A',
+        'ICP Filing No.: 沪ICP备2026033910号-2A',
+      );
   String get appUpdateCheck => _t('检查更新', 'Check for updates');
   String get appUpdateChecking => _t('正在检查…', 'Checking…');
   String get appUpdateAvailableTitle => _t('发现新版本', 'Update available');

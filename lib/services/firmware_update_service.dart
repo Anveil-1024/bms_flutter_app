@@ -110,6 +110,14 @@ class FirmwareUpdateService {
     );
   }
 
+  /// 取固件版本号中的软件版本部分。
+  /// 版本号由「硬件版本 2 位 + 软件版本 2 位」拼接（如 `0112`），
+  /// OTA 只比较软件版本，末尾 2 位即为软件版本号。
+  static String softwareVersionOf(String version) {
+    final v = version.trim();
+    return v.length <= 2 ? v : v.substring(v.length - 2);
+  }
+
   /// 比较版本：纯数字按整数，否则按字符串
   static int compareVersion(String a, String b) {
     final na = int.tryParse(a);
@@ -147,7 +155,12 @@ class FirmwareUpdateService {
     final target = block.latestFile;
     final downloadUrl = block.latestDownloadUrl ?? target?.downloadUrl;
 
-    if (compareVersion(localVersion, latest) >= 0) {
+    // 只比较软件版本号，硬件版本不参与判断
+    if (compareVersion(
+          softwareVersionOf(localVersion),
+          softwareVersionOf(latest),
+        ) >=
+        0) {
       return FirmwareCheckResult(
         status: FirmwareUpdateStatus.upToDate,
         productId: productId,

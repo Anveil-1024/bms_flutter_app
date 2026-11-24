@@ -17,8 +17,8 @@
 
 **分发约定：**
 
-- **Android**：`android_download_url` 指向外部分发网站（下载页/首页），由用户在网页完成安装。App **不**下载或安装 APK。
-- **iOS**：`ios_store_url` 指向 App Store 产品页。App **不**安装 IPA。
+- **Android**：`android_download_url` 指向外部分发网站（下载页/首页），由用户在网页完成安装。App **不**下载或安装 APK。使用蒲公英分发时填下载页短链 `https://www.pgyer.com/<短链接>` 即可。
+- **iOS**：`ios_store_url` 指向 App Store 产品页。App **不**安装 IPA。若要蒲公英内测包点更新直接弹安装，填写 `ios_build_key`（见下方「蒲公英内测安装」）。
 
 示例文件见同目录 [`app_version.example.json`](app_version.example.json)，部署时作为 `https://grb.asia/api/app-version.json` 并填入真实链接。
 
@@ -33,7 +33,7 @@
        │
        │  semver 比较本地 version vs latest / min_supported
        │  强制 → 不可关闭弹窗；软提醒 → 可稍后（记住 skipped 版本）
-       │  立即升级：Android 打开外部分发网站；iOS 打开 App Store
+       │  立即升级：Android 打开蒲公英下载页；iOS 配了 buildKey 则弹内测安装，否则打开 App Store
        ▼
 ```
 
@@ -50,8 +50,10 @@
   "force": false,
   "release_notes_zh": "修复蓝牙断连；新增升级检测",
   "release_notes_en": "Fix BLE disconnect; add app update check",
-  "android_download_url": "https://example.com/grb-link/",
-  "ios_store_url": "https://apps.apple.com/app/idXXXXXXXX"
+  "android_download_url": "https://www.pgyer.com/abcd",
+  "ios_store_url": "https://apps.apple.com/app/idXXXXXXXX",
+  "ios_build_key": "",
+  "install_password": ""
 }
 ```
 
@@ -61,8 +63,10 @@
 | `min_supported_version` | string | 最低可继续使用的版本；低于此版本一律强制升级 |
 | `force` | bool | 为 `true` 时，凡低于 `latest_version` 的用户一律强制 |
 | `release_notes_zh` / `release_notes_en` | string | 弹窗更新说明，按 App 语言选用 |
-| `android_download_url` | string | Android 外部分发网站，**不是** APK 直链 |
+| `android_download_url` | string | Android 外部分发网站，**不是** APK 直链；用蒲公英时填 `https://www.pgyer.com/<短链接>` |
 | `ios_store_url` | string | iOS App Store 产品页 |
+| `ios_build_key` | string | 可选。蒲公英 `buildKey`，填写后 iOS 点「立即更新」直接弹系统安装；留空则走 `ios_store_url` |
+| `install_password` | string | 可选。蒲公英密码安装时的安装密码，仅 `ios_build_key` 生效时使用 |
 
 版本比较规则：按 `.` 分段做数字比较（`1.0.10 > 1.0.2`）。忽略 `+build` 与 `-pre` 后缀。
 
@@ -74,6 +78,22 @@
 4. 否则 → 已是最新
 
 网络失败默认 **放行**（fail-open），避免无网用户进不了 App。
+
+### 蒲公英内测安装
+
+`ios_build_key` 非空时，iOS 点「立即更新」会打开：
+
+```
+itms-services://?action=download-manifest&url=https%3A%2F%2Fwww.pgyer.com%2Fapp%2Fplist%2F<buildKey>
+```
+
+系统直接弹安装确认，不再跳浏览器。`install_password` 非空时会在 plist 地址后追加 `?password=`。
+
+注意：
+
+- 仅适用于蒲公英内测/企业签名包；App Store 包请留空 `ios_build_key`，否则会安装失败。
+- **不要**在清单里配置带 `_api_key` 的 `/apiv2/app/install` 链接，API Key 会随清单下发到所有客户端。Android 直接用下载页短链。
+- `buildKey` 可在蒲公英后台该版本的详情/API 返回中获取，每次发版都会变化，上线新版本时要同步更新。
 
 ---
 
